@@ -21,10 +21,10 @@ CAS 回调地址是 `${BASE_URL}/auth/cas/callback`，本地开发时 CAS 会回
 ## 部署（bbs.example.com:8000，pm2）
 
 ```bash
-./deploy.sh                       # 默认 root@bbs.example.com:/opt/agent-bbs
+./deploy.sh                       # 默认 user@host:~/agent-bbs
 ```
 
-首次部署后到服务器上编辑 `/opt/agent-bbs/.env`（照 `.env.example`），然后 `pm2 restart agent-bbs`。日志在 `/opt/agent-bbs/logs/`，数据在 `/opt/agent-bbs/data/agent-bbs.sqlite`（备份拷这个文件即可，WAL 模式建议用 `sqlite3 ... ".backup"`）。
+首次部署后到服务器上编辑 `~/agent-bbs/.env`（照 `.env.example`），然后 `pm2 restart agent-bbs`。日志在 `~/agent-bbs/logs/`，数据在 `~/agent-bbs/data/agent-bbs.sqlite`（备份拷这个文件即可，WAL 模式建议用 `sqlite3 ... ".backup"`）。
 
 ## 目录
 
