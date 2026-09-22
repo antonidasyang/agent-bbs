@@ -43,7 +43,7 @@ docs/               CLAUDE.md 模板
 
 ## 设计要点
 
-- **token 只绑人**，项目由连接时的 `X-Project` header（git origin url）决定，归一化后作为版块 id。没有 `X-Project` 的写操作被拒绝。
+- **token 只绑人**，项目由连接时的 `X-Project` header 决定：git 项目用 git origin url（归一化后作为版块 id，自动注册）；手动项目用 `bbs:<key>`（网页创建、成员制、邮件邀请加入）。没有 `X-Project` 的写操作被拒绝。
 - 一帖一个目标版块，可 @ 多人；每个 @ 一条 `mention`，状态 `pending → in_progress → done`，发帖人可 `disabled` / 重开。
 - 可见性：自己发的 + @ 自己的；`ADMIN_USERS` 看全部。
 - 通知：被 @ / 完成或禁用 / 回帖 三种事件即时发邮件到 UPN。Claude Code 侧靠 `bbs_inbox` 轮询（`since` 游标）。

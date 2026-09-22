@@ -5,7 +5,9 @@ import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
 import { localPart } from '../core/users.js'
-import { listProjectsForUser, getProject, listProjects } from '../core/projects.js'
+import { listProjectsForUser, getProject, listProjects, createManualProject } from '../core/projects.js'
+import * as members from '../core/members.js'
+import { sendInviteMails } from '../mail/index.js'
 import { createToken, listTokens, revokeToken } from '../core/tokens.js'
 import * as posts from '../core/posts.js'
 import * as svc from '../core/service.js'
@@ -49,8 +51,21 @@ web.get('/', (c) => {
   const box = posts.getInbox(db, actor, { status: 'open', limit: 20 })
   const counts = new Map<number, number>()
   for (const t of box.tasks) counts.set(t.post.project_id, (counts.get(t.post.project_id) ?? 0) + 1)
+  const invites = members.pendingInvites(db, actor.user.upn)
   return c.html(
     <Layout title="版块" actor={actor} flash={flashOf(c)}>
+      {invites.length > 0 && (
+        <div class="card" style="border-color:var(--warn)">
+          <h2>你有 {invites.length} 个待接受的项目邀请</h2>
+          <ul>
+            {invites.map((i) => (
+              <li>
+                <b>{i.project_name}</b> <span class="muted small">{i.inviter_name ? `${i.inviter_name} 邀请` : ''}</span> · <a href={`/invite/${i.invite_token}`}>查看</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div class="card">
         <h2>版块（项目）{actor.isAdmin && <span class="muted"> · 超管视图，全部项目</span>}</h2>
         {projects.length === 0 ? (
@@ -62,7 +77,8 @@ web.get('/', (c) => {
             <thead>
               <tr>
                 <th>项目</th>
-                <th>git url</th>
+                <th>标识</th>
+                <th>类型</th>
                 <th>我的待办</th>
                 <th></th>
               </tr>
@@ -74,6 +90,7 @@ web.get('/', (c) => {
                     <a href={`/p/${p.id}`}>{p.name}</a>
                   </td>
                   <td class="muted">{p.slug}</td>
+                  <td class="muted small">{p.kind === 'manual' ? '手动 · 成员制' : 'git'}</td>
                   <td>{counts.get(p.id) ? <span class="badge pending">{counts.get(p.id)}</span> : <span class="muted">0</span>}</td>
                   <td>
                     <a href={`/posts/new?project=${p.id}`}>发帖</a>
@@ -84,7 +101,8 @@ web.get('/', (c) => {
           </table>
         )}
         <p class="small" style="margin-top:12px">
-          <a href="/posts/new">+ 发新帖</a>
+          <a href="/posts/new">+ 发新帖</a> · <a href="/projects/new">+ 新建手动项目</a>
+          <span class="muted">（非 git 仓库的协作：建项目、邀请同事加入后互相 @）</span>
         </p>
       </div>
       <TaskList title="@ 我的待办" tasks={box.tasks} />
@@ -187,11 +205,60 @@ web.get('/p/:id', (c) => {
       {label}
     </a>
   )
+  const isManual = project.kind === 'manual'
+  const mems = isManual ? members.listMembers(db, project.id) : []
+  const isOwner = project.owner_upn === actor.user.upn || actor.isAdmin
+  const joined = isManual && members.isJoined(db, project.id, actor.user.upn)
   return c.html(
     <Layout title={project.name} actor={actor} flash={flashOf(c)}>
       <h1>
         {project.name} <span class="muted small">{project.slug}</span>
       </h1>
+      {isManual && (
+        <div class="card">
+          {project.description && <p style="margin-top:0">{project.description}</p>}
+          <h2>成员（{mems.filter((m) => m.status === 'joined').length}）</h2>
+          <table>
+            <tbody>
+              {mems.map((m) => (
+                <tr>
+                  <td>
+                    <b>{m.display_name}</b> <span class="muted">@{localPart(m.user_upn)}</span>
+                  </td>
+                  <td class="muted small">{m.role === 'owner' ? '创建者' : m.status === 'joined' ? '成员' : '已邀请，待接受'}</td>
+                  <td class="muted small">{m.status === 'joined' ? fmt(m.joined_at) : fmt(m.invited_at)}</td>
+                  <td style="text-align:right">
+                    {isOwner && m.role !== 'owner' && (
+                      <form class="inline" method="post" action={`/p/${project.id}/members/remove`}>
+                        <input type="hidden" name="upn" value={m.user_upn} />
+                        <button class="danger" type="submit">
+                          {m.status === 'joined' ? '移除' : '撤回邀请'}
+                        </button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {(joined || actor.isAdmin) && (
+            <form method="post" action={`/p/${project.id}/members/invite`} style="margin-top:10px">
+              <input type="text" name="invitees" placeholder="邀请：账号（zhangsan）或姓名，多个用空格/逗号分开" style="width:420px;display:inline-block" /> <button class="primary" type="submit">
+                发邀请邮件
+              </button>
+              <span class="muted small"> 没登录过 BBS 的同事请用账号邀请</span>
+            </form>
+          )}
+          <p class="muted small" style="margin-top:10px">
+            Claude Code 接入这个项目：在任意目录执行 <code>claude mcp add --transport http --scope local agent-bbs {config.baseUrl}/mcp --header "Authorization: Bearer &lt;token&gt;" --header "X-Project: {project.slug}"</code>
+            {joined && project.owner_upn !== actor.user.upn && (
+              <form class="inline" method="post" action={`/p/${project.id}/members/leave`} style="margin-left:10px">
+                <button type="submit">退出项目</button>
+              </form>
+            )}
+          </p>
+        </div>
+      )}
       <p class="tabs">
         {tab('open', '未完成')}
         {tab('pending', '待处理')}
@@ -244,6 +311,137 @@ web.get('/p/:id', (c) => {
   )
 })
 
+// ---------- 手动项目 ----------
+web.get('/projects/new', (c) => {
+  const actor = c.get('actor')
+  return c.html(
+    <Layout title="新建项目" actor={actor} flash={flashOf(c)}>
+      <div class="card">
+        <h2>新建手动项目</h2>
+        <p class="muted small">适合没有 git 仓库的协作。你会成为创建者，然后邀请同事加入；只有成员能在这个项目里发帖和被 @。</p>
+        <form method="post" action="/projects/new">
+          <label>项目名</label>
+          <input type="text" name="name" required maxlength={60} placeholder="例如：Q4 市场活动" />
+          <label>标识 key（可选，英文小写/数字/-，Claude Code 接入时用 bbs:&lt;key&gt;；不填则由项目名生成，中文名会得到随机串）</label>
+          <input type="text" name="key" maxlength={64} placeholder="例如：q4-marketing" />
+          <label>说明（可选）</label>
+          <textarea name="description" style="min-height:80px" placeholder="这个项目是做什么的"></textarea>
+          <p>
+            <button class="primary" type="submit">
+              创建
+            </button>
+          </p>
+        </form>
+      </div>
+    </Layout>,
+  )
+})
+web.post('/projects/new', async (c) => {
+  const f = await c.req.parseBody()
+  try {
+    const p = createManualProject(c.get('db'), c.get('actor'), { name: String(f['name'] ?? ''), description: String(f['description'] ?? ''), key: String(f['key'] ?? '') })
+    return redirectFlash(c, `/p/${p.id}`, `项目已创建，标识 ${p.slug}。现在邀请同事加入。`)
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/projects/new', e.message)
+    throw e
+  }
+})
+web.post('/p/:id/members/invite', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const db = c.get('db')
+  const actor = c.get('actor')
+  const f = await c.req.parseBody()
+  const invitees = String(f['invitees'] ?? '')
+    .split(/[\s,，;；]+/)
+    .filter(Boolean)
+  try {
+    const r = members.inviteMembers(db, actor, id, invitees)
+    const project = getProject(db, id)!
+    sendInviteMails(db, actor.user, project, r.invited)
+    const parts: string[] = []
+    if (r.invited.length) parts.push(`已向 ${r.invited.map((i) => i.user.display_name).join('、')} 发出邀请邮件`)
+    if (r.already.length) parts.push(`${r.already.map((u) => u.display_name).join('、')} 已是成员`)
+    return redirectFlash(c, `/p/${id}`, parts.join('；'))
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, `/p/${id}`, e.message)
+    throw e
+  }
+})
+web.post('/p/:id/members/remove', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const f = await c.req.parseBody()
+  try {
+    members.removeMember(c.get('db'), c.get('actor'), id, String(f['upn'] ?? ''))
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, `/p/${id}`, e.message)
+    throw e
+  }
+  return c.redirect(`/p/${id}`)
+})
+web.post('/p/:id/members/leave', (c) => {
+  const id = idParam(c.req.param('id'))
+  try {
+    members.leaveProject(c.get('db'), c.get('actor'), id)
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, `/p/${id}`, e.message)
+    throw e
+  }
+  return redirectFlash(c, '/', '已退出项目')
+})
+web.get('/invite/:token', (c) => {
+  const actor = c.get('actor')
+  const inv = members.getInviteByToken(c.get('db'), c.req.param('token'))
+  if (!inv) throw new AppError(404, '邀请不存在或已失效（可能已被接受或撤回）')
+  const mine = inv.user_upn === actor.user.upn
+  return c.html(
+    <Layout title="项目邀请" actor={actor} flash={flashOf(c)}>
+      <div class="card">
+        <h2>
+          {inv.inviter_name ?? '同事'} 邀请你加入项目「{inv.project.name}」
+        </h2>
+        {inv.project.description && <p>{inv.project.description}</p>}
+        <p class="muted small">
+          标识 {inv.project.slug} · 加入后你和你的 Claude Code 可以在这个项目里 @ 其他成员派任务，也会收到 @ 你的任务。
+        </p>
+        {mine ? (
+          <p>
+            <form class="inline" method="post" action={`/invite/${inv.invite_token}/accept`}>
+              <button class="primary" type="submit">
+                接受加入
+              </button>
+            </form>{' '}
+            <form class="inline" method="post" action={`/invite/${inv.invite_token}/decline`}>
+              <button type="submit">拒绝</button>
+            </form>
+          </p>
+        ) : (
+          <p class="flash">
+            此邀请是发给 @{localPart(inv.user_upn)} 的，你当前登录的是 @{localPart(actor.user.upn)}。请<a href="/auth/logout">退出</a>后用正确的账号登录。
+          </p>
+        )}
+      </div>
+    </Layout>,
+  )
+})
+web.post('/invite/:token/accept', (c) => {
+  try {
+    const p = members.acceptInvite(c.get('db'), c.get('actor'), c.req.param('token'))
+    return redirectFlash(c, `/p/${p.id}`, `已加入「${p.name}」`)
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/', e.message)
+    throw e
+  }
+})
+web.post('/invite/:token/decline', (c) => {
+  try {
+    members.declineInvite(c.get('db'), c.get('actor'), c.req.param('token'))
+    return redirectFlash(c, '/', '已拒绝邀请')
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/', e.message)
+    throw e
+  }
+})
+
 // ---------- 发帖 ----------
 web.get('/posts/new', (c) => {
   const db = c.get('db')
@@ -260,7 +458,7 @@ web.get('/posts/new', (c) => {
             <option value="">请选择</option>
             {projects.map((p) => (
               <option value={String(p.id)} selected={p.id === selected}>
-                {p.name} — {p.slug}
+                {p.kind === 'manual' ? '[手动] ' : ''}{p.name} — {p.slug}
               </option>
             ))}
           </select>

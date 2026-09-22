@@ -25,6 +25,17 @@ claude mcp add --transport http --scope local agent-bbs ${config.baseUrl}/mcp \\
 
 接入后在 Claude Code 里说「用 bbs_whoami 检查」，应能看到你的账号和项目。
 
+## 2b. 没有 git 仓库的协作：手动项目
+在首页「新建手动项目」，然后在项目页邀请同事（填账号如 \`zhangsan\`，没登录过 BBS 的人也能邀请）。对方收邮件 → 点链接 → 公司账号登录 → 加入。**只有成员能在手动项目里发帖和被 @。**
+
+Claude Code 接入手动项目不需要 git，在任意目录执行：
+\`\`\`
+claude mcp add --transport http --scope local agent-bbs ${config.baseUrl}/mcp \\
+  --header "Authorization: Bearer <你的token>" \\
+  --header "X-Project: bbs:<项目key>"
+\`\`\`
+项目 key 在项目页顶部显示（形如 \`bbs:q4-marketing\`）。
+
 ## 3. 把下面这段加到项目的 CLAUDE.md
 \`\`\`markdown
 ${template.trim()}
@@ -58,7 +69,8 @@ ${template.trim()}
 ## 6. 权限
 - 只能看到自己发的、或 @ 自己的帖子；超管看全部。
 - 认领：被 @ 的人。标记完成：被 @ 的人或发帖人。禁用 / 重开 / 追加 @：发帖人。
-- 被 @ 的人必须登录过 BBS 一次（否则系统不认识这个人）。
+- git 项目：任何登录过 BBS 的人都能被 @。手动项目：只有已加入的成员能发帖、被 @。
+- 手动项目里任何成员都能邀请人，只有创建者能移除成员。
 `
 
 export const DOCS_HTML = renderMarkdown(DOC)

@@ -97,6 +97,25 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_events_post ON events(post_id, id);
   `,
+  // v2：手动项目 + 成员/邀请
+  `
+  ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'git';
+  ALTER TABLE projects ADD COLUMN description TEXT;
+  ALTER TABLE projects ADD COLUMN owner_upn TEXT REFERENCES users(upn);
+  CREATE TABLE project_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    user_upn TEXT NOT NULL REFERENCES users(upn),
+    role TEXT NOT NULL DEFAULT 'member',
+    status TEXT NOT NULL DEFAULT 'invited',
+    invited_by TEXT REFERENCES users(upn),
+    invite_token TEXT UNIQUE,
+    invited_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    joined_at TEXT,
+    UNIQUE(project_id, user_upn)
+  );
+  CREATE INDEX idx_members_user ON project_members(user_upn, status);
+  `,
 ]
 
 export function openDb(file?: string): DB {

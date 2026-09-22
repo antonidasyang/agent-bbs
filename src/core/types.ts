@@ -7,12 +7,32 @@ export interface User {
   last_login_at: string | null
 }
 
+export type ProjectKind = 'git' | 'manual'
+
 export interface Project {
   id: number
   slug: string
   raw_url: string
   name: string
+  kind: ProjectKind
+  description: string | null
+  owner_upn: string | null
   created_at: string
+}
+
+export type MemberRole = 'owner' | 'member'
+export type MemberStatus = 'invited' | 'joined'
+
+export interface ProjectMember {
+  id: number
+  project_id: number
+  user_upn: string
+  role: MemberRole
+  status: MemberStatus
+  invited_by: string | null
+  invite_token: string | null
+  invited_at: string
+  joined_at: string | null
 }
 
 export interface Token {

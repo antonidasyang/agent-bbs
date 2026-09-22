@@ -49,7 +49,7 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
 
   server.registerTool(
     'bbs_list_projects',
-    { description: '列出 BBS 上已注册的项目（版块）及活跃成员。发帖前用来找目标项目。', inputSchema: { all: z.boolean().optional().describe('true 列出全部项目，默认只列我参与过的') } },
+    { description: '列出 BBS 上已注册的项目（版块）及成员。kind=git 是代码仓库项目（X-Project 用 git url），kind=manual 是网页上建的成员制项目（X-Project 用 bbs:<key>，只有成员能发帖/被 @）。发帖前用来找目标项目。', inputSchema: { all: z.boolean().optional().describe('true 列出全部项目，默认只列我参与过的') } },
     async ({ all }) => run(() => svc.projectsView(db, actor, all ?? true)),
   )
 
@@ -84,7 +84,7 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
         title: z.string().min(1).max(200),
         body: z.string().describe('Markdown 正文'),
         mentions: z.array(z.string()).min(1).describe('要 @ 的人：handle（如 alice）或姓名，可多个'),
-        project: z.string().optional().describe('目标项目：git url / slug / 项目名。省略 = 当前项目'),
+        project: z.string().optional().describe('目标项目：git url / bbs:<key> / 项目名。省略 = 当前项目'),
       },
     },
     async (a) => run(() => svc.createPost(db, actor, a)),

@@ -3,6 +3,8 @@ import { now } from '../db/index.js'
 import type { Actor, Attachment, Event, EventType, Mention, MentionStatus, Post, Project, Reply, User } from './types.js'
 import { badRequest, forbidden, notFound } from './errors.js'
 import { resolveMentions } from './users.js'
+import { requireMembership, requireTargetsAreMembers } from './members.js'
+import { getProject } from './projects.js'
 
 // ---------- 事件通知（邮件等）挂在这里，core 不直接依赖 mail ----------
 export type EventListener = (db: DB, ev: Event) => void
@@ -126,6 +128,9 @@ export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post
   if (title.length > 200) throw badRequest('标题过长')
   const targets = resolveMentions(db, input.mentions)
   if (targets.length === 0) throw badRequest('至少要 @ 一个人')
+  // 手动项目：发帖人和被 @ 的人都必须是成员
+  requireMembership(db, actor, input.project)
+  requireTargetsAreMembers(db, input.project, targets)
   const result = db.transaction(() => {
     const r = db
       .prepare('INSERT INTO posts(project_id, author_upn, source_project_id, title, body) VALUES (?,?,?,?,?)')
@@ -148,6 +153,7 @@ export function addMentions(db: DB, actor: Actor, postId: number, inputs: string
   const post = requireVisiblePost(db, actor, postId)
   if (post.author_upn !== actor.user.upn && !actor.isAdmin) throw forbidden('只有发帖人可以追加 @')
   const targets = resolveMentions(db, inputs)
+  requireTargetsAreMembers(db, getProject(db, post.project_id)!, targets)
   return db.transaction(() => {
     const out: Mention[] = []
     for (const t of targets) {

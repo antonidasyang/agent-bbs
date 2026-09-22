@@ -94,3 +94,15 @@ export function installMailNotifier() {
     if (m && m.to.length) void sendMail(m.to, m.subject, m.body)
   })
 }
+
+/** 邀请邮件：由调用方（网页）在邀请成功后触发 */
+export function sendInviteMails(db: DB, inviter: { display_name: string; upn: string }, project: { name: string; description: string | null }, invited: { user: { upn: string; mail: string | null }; token: string }[]) {
+  for (const { user, token } of invited) {
+    const link = `${config.baseUrl}/invite/${token}`
+    void sendMail(
+      [user.mail || user.upn],
+      `[agent-bbs] ${inviter.display_name} 邀请你加入项目「${project.name}」`,
+      `${inviter.display_name}(@${localPart(inviter.upn)}) 邀请你加入 agent-bbs 项目「${project.name}」。${project.description ? `\n\n${project.description}` : ''}\n\n加入后你和你的 Claude Code 就可以在这个项目里互相 @ 对方派任务。点击链接接受（需要用公司账号登录）：\n${link}\n\n—— agent-bbs 自动邮件`,
+    )
+  }
+}

@@ -6,6 +6,7 @@ import type { Actor, MentionStatus } from './types.js'
 import * as posts from './posts.js'
 import { findProject, listProjects, listProjectsForUser, getProject } from './projects.js'
 import { listUsers, localPart } from './users.js'
+import { listMembers } from './members.js'
 import { badRequest, forbidden } from './errors.js'
 import { config } from '../config.js'
 import { makeObjectKey, minioEnabled, putObject, sha256 } from '../storage/minio.js'
@@ -21,7 +22,7 @@ export function whoami(db: DB, actor: Actor) {
 export function projectsView(db: DB, actor: Actor, all = false) {
   const list = all || actor.isAdmin ? listProjects(db) : listProjectsForUser(db, actor.user.upn, false)
   const merged = new Map(list.map((p) => [p.id, p]))
-  // 谁在这个项目上活跃（最近用 token 访问过）
+  // git 项目：谁最近用 token 在这个项目上活跃过；手动项目：已加入的成员
   const who = db.prepare(`SELECT t.last_project_id AS pid, u.upn, u.display_name FROM tokens t JOIN users u ON u.upn = t.user_upn WHERE t.revoked_at IS NULL AND t.last_project_id IS NOT NULL`).all() as {
     pid: number
     upn: string
@@ -30,8 +31,15 @@ export function projectsView(db: DB, actor: Actor, all = false) {
   return [...merged.values()].map((p) => ({
     slug: p.slug,
     name: p.name,
-    url: p.raw_url,
-    members: who.filter((w) => w.pid === p.id).map((w) => `${w.display_name} (@${localPart(w.upn)})`),
+    kind: p.kind,
+    url: p.kind === 'git' ? p.raw_url : undefined,
+    x_project: p.kind === 'git' ? p.raw_url : p.slug,
+    description: p.description ?? undefined,
+    members:
+      p.kind === 'manual'
+        ? listMembers(db, p.id).filter((m) => m.status === 'joined').map((m) => `${m.display_name} (@${localPart(m.user_upn)})`)
+        : who.filter((w) => w.pid === p.id).map((w) => `${w.display_name} (@${localPart(w.upn)})`),
+    note: p.kind === 'manual' ? '手动项目：只有成员能发帖/被 @；接入用 X-Project: ' + p.slug : undefined,
   }))
 }
 

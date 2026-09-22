@@ -97,3 +97,57 @@ test('listPosts 状态筛选与可见性', () => {
   assert.deepEqual(posts.listPosts(db, actor(wang, null), { projectId: server.id, status: 'done' }).map((p) => p.title), ['b'])
   assert.equal(posts.listPosts(db, y, { projectId: server.id }).length, 2)
 })
+
+test('手动项目：成员制、邀请、接受、非成员拒绝', async () => {
+  const members = await import('../src/core/members.js')
+  const { createManualProject, ensureProject: ensure } = await import('../src/core/projects.js')
+  const y = actor(yang, null)
+  const p = createManualProject(db, y, { name: 'Q4 市场活动', description: 'desc' })
+  assert.equal(p.kind, 'manual')
+  assert.equal(p.slug, 'bbs:q4')
+  assert.equal(p.owner_upn, yang.upn)
+  assert.ok(members.isJoined(db, p.id, yang.upn))
+
+  // 未登录过的人也能按账号邀请（建占位用户）；姓名只能匹配已存在的
+  const r = members.inviteMembers(db, y, p.id, ['zhaoliu', '李四'])
+  assert.equal(r.invited.length, 2)
+  assert.equal(members.getMember(db, p.id, 'zhaoliu@example.com')!.status, 'invited')
+  assert.throws(() => members.inviteMembers(db, y, p.id, ['不存在的人']), /不存在/)
+
+  // 非成员不能发帖；@ 未加入的人被拒
+  const li0 = actor(li, p)
+  assert.throws(() => posts.createPost(db, li0, { project: p, title: 't', body: '', mentions: ['alice'] }), /不是项目/)
+  assert.throws(() => posts.createPost(db, actor(yang, p), { project: p, title: 't', body: '', mentions: ['lisi'] }), /不是项目.*成员/)
+
+  // 别人不能用李四的邀请 token
+  const liInvite = r.invited.find((i) => i.user.upn === li.upn)!
+  assert.throws(() => members.acceptInvite(db, actor(wang, null), liInvite.token), /发给/)
+  members.acceptInvite(db, actor(li, null), liInvite.token)
+  assert.ok(members.isJoined(db, p.id, li.upn))
+  assert.equal(members.pendingInvites(db, li.upn).length, 0)
+
+  // 加入后可以互相 @
+  const created = posts.createPost(db, actor(yang, p), { project: p, title: 't', body: '', mentions: ['lisi'] })
+  assert.equal(posts.getInbox(db, actor(li, p)).tasks.length, 1)
+  assert.equal(created.mentions.length, 1)
+
+  // 成员也能邀请；X-Project bbs:key 对非成员拒绝
+  members.inviteMembers(db, actor(li, p), p.id, ['wangwu'])
+  assert.throws(() => members.requireMembership(db, actor(wang, null), ensure(db, p.slug)), /不是项目/)
+  assert.throws(() => ensure(db, 'bbs:nope'), /不存在/)
+
+  // owner 才能移除；owner 不能退出
+  assert.throws(() => members.removeMember(db, actor(li, null), p.id, wang.upn), /创建者/)
+  members.removeMember(db, y, p.id, li.upn)
+  assert.equal(members.getMember(db, p.id, li.upn), undefined)
+  assert.throws(() => members.leaveProject(db, y, p.id), /不能退出/)
+})
+
+test('手动项目自定义 key', async () => {
+  const { createManualProject } = await import('../src/core/projects.js')
+  const y = actor(yang, null)
+  assert.equal(createManualProject(db, y, { name: '双十一', key: 'D11-Promo' }).slug, 'bbs:d11-promo')
+  assert.throws(() => createManualProject(db, y, { name: 'x', key: 'd11-promo' }), /占用/)
+  assert.throws(() => createManualProject(db, y, { name: 'x', key: '中文' }), /key/)
+  assert.match(createManualProject(db, y, { name: '双十一' }).slug, /^bbs:[0-9a-f]{8}$/)
+})

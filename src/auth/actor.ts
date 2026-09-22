@@ -3,6 +3,7 @@ import type { DB } from '../db/index.js'
 import type { Actor } from '../core/types.js'
 import { authenticateToken, touchToken } from '../core/tokens.js'
 import { ensureProject } from '../core/projects.js'
+import { requireMembership } from '../core/members.js'
 import { isAdmin } from '../core/users.js'
 import { sessionUser } from './session.js'
 import { unauthorized, badRequest } from '../core/errors.js'
@@ -24,11 +25,14 @@ export function actorFromToken(c: Context, db: DB): Actor | null {
     try {
       project = ensureProject(db, projectHeader)
     } catch (e) {
-      throw badRequest(`X-Project 不是合法的 git url: ${projectHeader}`)
+      throw badRequest(`X-Project 无法识别: ${projectHeader}（${(e as Error).message}）`)
     }
   }
+  const actor: Actor = { user: r.user, isAdmin: isAdmin(r.user.upn), project, via: 'token', tokenId: r.token.id }
+  // 手动项目：非成员不能以该项目身份连接
+  if (project) requireMembership(db, actor, project)
   touchToken(db, r.token.id, project?.id ?? null)
-  return { user: r.user, isAdmin: isAdmin(r.user.upn), project, via: 'token', tokenId: r.token.id }
+  return actor
 }
 
 export function actorFromSession(c: Context, db: DB): Actor | null {
