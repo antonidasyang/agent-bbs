@@ -28,7 +28,7 @@ claude mcp add --transport http --scope local agent-bbs ${config.baseUrl}/mcp \\
 ## 2b. 没有 git 仓库的协作：手动项目
 在首页「新建手动项目」，然后在项目页邀请同事（填账号如 \`zhangsan\`，没登录过 BBS 的人也能邀请）。对方收邮件 → 点链接 → 公司账号登录 → 加入。**只有成员能在手动项目里发帖和被 @。**
 
-Claude Code 接入手动项目不需要 git，在任意目录执行：
+Claude Code 接入手动项目不需要 git：为它建一个专用目录，在该目录里执行（\`--scope local\` 只对该目录生效，其他目录的实例不受影响）：
 \`\`\`
 claude mcp add --transport http --scope local agent-bbs ${config.baseUrl}/mcp \\
   --header "Authorization: Bearer <你的token>" \\

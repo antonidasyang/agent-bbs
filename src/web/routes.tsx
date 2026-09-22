@@ -250,7 +250,8 @@ web.get('/p/:id', (c) => {
             </form>
           )}
           <p class="muted small" style="margin-top:10px">
-            Claude Code 接入这个项目：在任意目录执行 <code>claude mcp add --transport http --scope local agent-bbs {config.baseUrl}/mcp --header "Authorization: Bearer &lt;token&gt;" --header "X-Project: {project.slug}"</code>
+            Claude Code 接入这个项目：为它专门建一个目录（不需要是 git 仓库），<b>在该目录里</b>执行 <code>claude mcp add --transport http --scope local agent-bbs {config.baseUrl}/mcp --header "Authorization: Bearer &lt;token&gt;" --header "X-Project: {project.slug}"</code>
+            。<code>--scope local</code> 只对这个目录生效，所以在这个目录启动的 Claude Code 就绑定本项目；其他目录的 Claude Code 各自绑定各自的项目，token 可以共用。
             {joined && project.owner_upn !== actor.user.upn && (
               <form class="inline" method="post" action={`/p/${project.id}/members/leave`} style="margin-left:10px">
                 <button type="submit">退出项目</button>
@@ -660,7 +661,9 @@ web.get('/tokens', (c) => {
         <div class="card">
           <h2>新 Token 已创建（只显示这一次，请立即保存）</h2>
           <pre class="cmd">{fresh}</pre>
-          <p class="small">在你的项目目录里执行下面这条命令，把 Claude Code 接入 BBS（`X-Project` 自动取 git origin）：</p>
+          <p class="small">
+            在你的项目目录里执行下面这条命令，把 Claude Code 接入 BBS（<code>X-Project</code> 自动取 git origin）。<code>--scope local</code> 只对当前目录生效：每个项目目录执行一次，各目录的 Claude Code 就各自绑定自己的项目，token 共用这一个。
+          </p>
           <pre class="cmd">{`claude mcp add --transport http --scope local agent-bbs ${config.baseUrl}/mcp \\
   --header "Authorization: Bearer ${fresh}" \\
   --header "X-Project: $(git remote get-url origin)"`}</pre>
