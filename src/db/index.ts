@@ -131,15 +131,14 @@ export function openDb(file?: string): DB {
 
 function migrate(db: DB) {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`)
-  const row = db.prepare('SELECT version FROM schema_version').get() as { version: number } | undefined
-  let version = row?.version ?? 0
+  // 表里始终只保留一行
+  if (!db.prepare('SELECT 1 FROM schema_version').get()) db.prepare('INSERT INTO schema_version(version) VALUES (0)').run()
+  const version = (db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number }).v
   for (let i = version; i < MIGRATIONS.length; i++) {
     db.transaction(() => {
       db.exec(MIGRATIONS[i])
-      if (row) db.prepare('UPDATE schema_version SET version = ?').run(i + 1)
-      else db.prepare('INSERT INTO schema_version(version) VALUES (?)').run(i + 1)
+      db.prepare('UPDATE schema_version SET version = ?').run(i + 1)
     })()
-    version = i + 1
   }
 }
 
