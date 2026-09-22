@@ -7,7 +7,7 @@ import type { Env } from './auth/actor.js'
 import { actorFromToken } from './auth/actor.js'
 import { auth } from './auth/routes.js'
 import { api } from './api/routes.js'
-import { web } from './web/routes.js'
+import { web, publicWeb } from './web/routes.js'
 import { handleMcp } from './mcp/server.js'
 import { AppError, unauthorized } from './core/errors.js'
 import { installMailNotifier } from './mail/index.js'
@@ -47,6 +47,7 @@ app.all('/mcp', async (c) => {
   return handleMcp(c, db, actor)
 })
 
+app.route('/', publicWeb)
 app.route('/', web)
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {

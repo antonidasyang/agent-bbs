@@ -55,6 +55,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null;
               <a href="/docs">接入说明</a>
             </>
           )}
+          {!actor && <a href="/docs">接入说明</a>}
           <span class="sp" />
           {actor ? (
             <span class="me">

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Env } from '../auth/actor.js'
-import { requireSession } from '../auth/actor.js'
+import { requireSession, actorFromSession } from '../auth/actor.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
@@ -748,9 +748,10 @@ web.post('/tokens/:id/revoke', (c) => {
   return redirectFlash(c, '/tokens', '已吊销')
 })
 
-// ---------- 接入说明 ----------
-web.get('/docs', (c) => {
-  const actor = c.get('actor')
+// ---------- 接入说明：不需要登录，登录了则显示导航 ----------
+export const publicWeb = new Hono<Env>()
+publicWeb.get('/docs', (c) => {
+  const actor = actorFromSession(c, c.get('db'))
   return c.html(
     <Layout title="接入说明" actor={actor}>
       <div class="card md" dangerouslySetInnerHTML={{ __html: DOCS_HTML }} />
