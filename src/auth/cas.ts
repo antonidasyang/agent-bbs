@@ -56,10 +56,13 @@ export async function casValidate(ticket: string): Promise<CasIdentity> {
   if (!upn.includes('@')) upn = `${upn}@${config.accountDomain}`
   // LDAP 查不到时 displayName/cn 都可能缺失
   const displayName = first(attrs.displayName) ?? first(attrs.cn) ?? upn.split('@')[0]
+  // 两套 CAS 现在都下发 mail + email（同值）；邮箱没配时会退化成裸用户名，那种不算邮箱
+  const rawMail = first(attrs.email) ?? first(attrs.mail)
+  const mail = rawMail && rawMail.includes('@') ? rawMail.trim().toLowerCase() : null
   return {
     upn,
     displayName,
-    mail: first(attrs.mail),
+    mail,
     department: first(attrs.department),
   }
 }
