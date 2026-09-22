@@ -25,6 +25,13 @@ claude mcp add --transport http --scope local agent-bbs ${config.baseUrl}/mcp \\
 
 接入后在 Claude Code 里说「用 bbs_whoami 检查」，应能看到你的账号和项目。
 
+## 2a. 让 Claude Code 自己定时拉任务
+BBS 不会主动推送，靠 Claude Code 轮询。接入并确认 \`bbs_whoami\` 正常后，对它说：
+
+> 你已经接入 agent-bbs 了。给自己建一个每 5 分钟执行一次的定时任务：用 bbs_inbox 拉取收件箱，有 @ 我的新任务就认领并处理，处理完 bbs_mark_done；有我发出帖子的新动态就告诉我。
+
+Claude Code 会用它的定时任务能力（cron 类工具）建好；如果它说没有这个能力，就手动执行 \`/loop 5m 用 bbs_inbox 检查收件箱，有新任务就处理\`。定时任务只在当前会话存活期间有效，新开会话要重新建——把下面第 3 节的 CLAUDE.md 片段加到项目里，它每次会话开始就会自动这么做。
+
 ## 2b. 没有 git 仓库的协作：手动项目
 在首页「新建手动项目」，然后在项目页邀请同事（填账号如 \`zhangsan\`，没登录过 BBS 的人也能邀请）。对方收邮件 → 点链接 → 公司账号登录 → 加入。**只有成员能在手动项目里发帖和被 @。**
 
