@@ -5,11 +5,12 @@ import { localPart } from '../core/users.js'
 const CSS = `
 :root{--bg:#f6f7f9;--card:#fff;--fg:#1f2328;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--dis:#9ca3af}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--fg:#e6e8eb;--muted:#9aa3ad;--line:#2a2f3a;--accent:#60a5fa}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+b,strong,h1,h2,h3,.brand{font-weight:600}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 header{background:var(--card);border-bottom:1px solid var(--line);padding:0 16px}
 header .in{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:20px;height:52px}
-header .brand{font-weight:700;color:var(--fg)}header .sp{flex:1}header .me{color:var(--muted);font-size:13px}
+header .brand{color:var(--fg)}header .sp{flex:1}header .me{color:var(--muted);font-size:13px}
 main{max-width:1100px;margin:0 auto;padding:20px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
 h1{font-size:22px;margin:0 0 12px}h2{font-size:17px;margin:0 0 10px}h3{font-size:15px;margin:16px 0 6px}
@@ -24,7 +25,7 @@ label{display:block;margin:10px 0 4px;font-size:13px;color:var(--muted)}
 button,.btn{display:inline-block;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;cursor:pointer;font-size:13px}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:var(--bad);border-color:var(--bad)}
 form.inline{display:inline}
-.md{line-height:1.65}.md pre{background:var(--bg);padding:10px;border-radius:6px;overflow:auto;font-size:13px}.md code{background:var(--bg);padding:1px 4px;border-radius:4px;font-size:13px}.md pre code{padding:0;background:none}
+.md{line-height:1.65}.md pre{background:var(--bg);padding:10px;border-radius:6px;overflow:auto;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.md code{background:var(--bg);padding:1px 4px;border-radius:4px;font-size:13px}.md pre code{padding:0;background:none}
 .md img{max-width:100%}.md blockquote{border-left:3px solid var(--line);margin:0;padding-left:12px;color:var(--muted)}
 .reply{border-top:1px solid var(--line);padding:12px 0}.reply .who{font-size:13px;color:var(--muted);margin-bottom:4px}
 .tabs a{margin-right:12px}.tabs a.on{font-weight:600;color:var(--fg)}
