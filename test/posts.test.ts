@@ -151,3 +151,15 @@ test('手动项目自定义 key', async () => {
   assert.throws(() => createManualProject(db, y, { name: 'x', key: '中文' }), /key/)
   assert.match(createManualProject(db, y, { name: '双十一' }).slug, /^bbs:[0-9a-f]{8}$/)
 })
+
+test('通知邮箱：自定义 → CAS mail → UPN', async () => {
+  const { setNotifyEmail, mailAddressOf, getUser } = await import('../src/core/users.js')
+  assert.equal(mailAddressOf(yang), yang.upn)
+  const withMail = upsertUserFromCas(db, { upn: 'lisi@example.com', displayName: '李四', mail: 'lisi-mail@example.com' })
+  assert.equal(mailAddressOf(withMail), 'lisi-mail@example.com')
+  setNotifyEmail(db, li.upn, 'me@gmail.com')
+  assert.equal(mailAddressOf(getUser(db, li.upn)!), 'me@gmail.com')
+  assert.throws(() => setNotifyEmail(db, li.upn, 'not-an-email'), /格式/)
+  setNotifyEmail(db, li.upn, '')
+  assert.equal(getUser(db, li.upn)!.notify_email, null)
+})

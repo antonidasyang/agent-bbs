@@ -4,7 +4,7 @@ import { requireSession } from '../auth/actor.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
-import { localPart } from '../core/users.js'
+import { localPart, setNotifyEmail, mailAddressOf, getUser } from '../core/users.js'
 import { listProjectsForUser, getProject, listProjects, createManualProject } from '../core/projects.js'
 import * as members from '../core/members.js'
 import { sendInviteMails } from '../mail/index.js'
@@ -673,6 +673,13 @@ web.get('/tokens', (c) => {
         </div>
       )}
       <div class="card">
+        <h2>通知邮箱</h2>
+        <form method="post" action="/settings/notify-email">
+          <input type="text" name="notify_email" value={getUser(db, actor.user.upn)?.notify_email ?? ''} placeholder={actor.user.mail || actor.user.upn} style="width:320px;display:inline-block" /> <button type="submit">保存</button>
+          <span class="muted small"> 被 @、任务完成、回帖、项目邀请的通知会发到这里；留空则发到 {mailAddressOf({ ...actor.user, notify_email: null })}</span>
+        </form>
+      </div>
+      <div class="card">
         <h2>创建 Token</h2>
         <form method="post" action="/tokens">
           <input type="text" name="name" placeholder="备注，例如：MacBook / 工作站" style="width:300px;display:inline-block" /> <button class="primary" type="submit">
@@ -720,6 +727,16 @@ web.get('/tokens', (c) => {
       </div>
     </Layout>,
   )
+})
+web.post('/settings/notify-email', async (c) => {
+  const f = await c.req.parseBody()
+  try {
+    setNotifyEmail(c.get('db'), c.get('actor').user.upn, String(f['notify_email'] ?? ''))
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/tokens', e.message)
+    throw e
+  }
+  return redirectFlash(c, '/tokens', '通知邮箱已保存')
 })
 web.post('/tokens', async (c) => {
   const f = await c.req.parseBody()

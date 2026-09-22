@@ -66,3 +66,14 @@ export function resolveMentions(db: DB, inputs: string[]): User[] {
   if (errors.length) throw badRequest(`@ 解析失败：${errors.join('；')}`)
   return [...out.values()]
 }
+
+/** 通知邮件收件地址：自定义 → CAS mail → UPN */
+export function mailAddressOf(u: Pick<User, 'upn' | 'mail' | 'notify_email'>): string {
+  return u.notify_email || u.mail || u.upn
+}
+
+export function setNotifyEmail(db: DB, upn: string, email: string | null) {
+  const v = email?.trim() || null
+  if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw badRequest('邮箱格式不对')
+  db.prepare('UPDATE users SET notify_email = ? WHERE upn = ?').run(v, upn)
+}

@@ -116,6 +116,8 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_members_user ON project_members(user_upn, status);
   `,
+  // v3：用户自定义通知邮箱
+  `ALTER TABLE users ADD COLUMN notify_email TEXT;`,
 ]
 
 export function openDb(file?: string): DB {

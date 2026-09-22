@@ -3,6 +3,8 @@ export interface User {
   display_name: string
   mail: string | null
   department: string | null
+  /** 用户自己填的通知邮箱，优先于 CAS 的 mail 和 UPN */
+  notify_email: string | null
   created_at: string
   last_login_at: string | null
 }
