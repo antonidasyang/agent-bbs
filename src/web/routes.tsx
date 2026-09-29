@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../auth/actor.js'
-import { requireSession, actorFromSession } from '../auth/actor.js'
+import { requireSession, actorFromSession, sameOriginPost } from '../auth/actor.js'
+import { changeLocalPassword, adminCreateLocalUser } from '../auth/local.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
@@ -18,16 +19,7 @@ import { DOCS_HTML } from './docs.js'
 export const web = new Hono<Env>()
 web.use('*', requireSession)
 
-// 网页 POST 的 CSRF：cookie 是 SameSite=Lax，再加一道同源检查
-web.use('*', async (c, next) => {
-  if (c.req.method === 'POST') {
-    const site = c.req.header('sec-fetch-site')
-    const origin = c.req.header('origin')
-    const ok = site ? site === 'same-origin' || site === 'none' : !origin || origin === new URL(config.baseUrl).origin || origin === new URL(c.req.url).origin
-    if (!ok) throw new AppError(403, '跨站请求被拒绝')
-  }
-  await next()
-})
+web.use('*', sameOriginPost)
 
 function idParam(v: string): number {
   const n = Number(v)
@@ -679,6 +671,28 @@ web.get('/tokens', (c) => {
           <span class="muted small"> 被 @、任务完成、回帖、项目邀请的通知会发到这里；留空则发到 {mailAddressOf({ ...actor.user, notify_email: null })}</span>
         </form>
       </div>
+      {config.authMode === 'local' && (
+        <div class="card">
+          <h2>修改密码</h2>
+          <form method="post" action="/settings/password">
+            <input type="password" name="old_password" placeholder="原密码" autocomplete="current-password" style="width:200px;display:inline-block;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit" />{' '}
+            <input type="password" name="new_password" placeholder="新密码（至少 8 位）" autocomplete="new-password" style="width:200px;display:inline-block;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit" />{' '}
+            <button type="submit">修改</button>
+          </form>
+        </div>
+      )}
+      {config.authMode === 'local' && actor.isAdmin && (
+        <div class="card">
+          <h2>新建用户（超管）</h2>
+          <form method="post" action="/admin/users">
+            <input type="text" name="username" placeholder="账号，如 zhangsan" style="width:160px;display:inline-block" />{' '}
+            <input type="text" name="display_name" placeholder="姓名" style="width:160px;display:inline-block" />{' '}
+            <input type="password" name="password" placeholder="初始密码（至少 8 位）" autocomplete="off" style="width:200px;display:inline-block;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit" />{' '}
+            <button type="submit">创建</button>
+          </form>
+          <p class="muted small">自助注册当前{config.localSignup === 'open' ? '开放' : '关闭'}（LOCAL_SIGNUP）。初始密码请线下告诉对方，对方登录后可在本页修改。</p>
+        </div>
+      )}
       <div class="card">
         <h2>创建 Token</h2>
         <form method="post" action="/tokens">
@@ -737,6 +751,29 @@ web.post('/settings/notify-email', async (c) => {
     throw e
   }
   return redirectFlash(c, '/tokens', '通知邮箱已保存')
+})
+web.post('/settings/password', async (c) => {
+  if (config.authMode !== 'local') throw badRequest('CAS 登录模式下没有本地密码')
+  const f = await c.req.parseBody()
+  try {
+    changeLocalPassword(c.get('db'), c.get('actor').user.upn, String(f['old_password'] ?? ''), String(f['new_password'] ?? ''))
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/tokens', e.message)
+    throw e
+  }
+  return redirectFlash(c, '/tokens', '密码已修改')
+})
+web.post('/admin/users', async (c) => {
+  if (config.authMode !== 'local') throw badRequest('CAS 登录模式下不能手工建号')
+  if (!c.get('actor').isAdmin) throw new AppError(403, '只有超管能建号')
+  const f = await c.req.parseBody()
+  try {
+    const u = adminCreateLocalUser(c.get('db'), { username: String(f['username'] ?? ''), displayName: String(f['display_name'] ?? ''), password: String(f['password'] ?? '') })
+    return redirectFlash(c, '/tokens', `已创建 @${localPart(u.upn)}`)
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/tokens', e.message)
+    throw e
+  }
 })
 web.post('/tokens', async (c) => {
   const f = await c.req.parseBody()

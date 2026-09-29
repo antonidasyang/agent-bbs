@@ -20,6 +20,18 @@ export const config = {
   sessionSecret: env('SESSION_SECRET'),
   adminUsers: env('ADMIN_USERS', 'alice@example.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   accountDomain: env('ACCOUNT_DOMAIN', 'example.com').toLowerCase(),
+  // 登录方式：cas（公司 CAS 单点登录）或 local（自建账号密码）
+  authMode: (() => {
+    const v = env('AUTH_MODE', 'cas')
+    if (v !== 'cas' && v !== 'local') throw new Error(`AUTH_MODE 只能是 cas 或 local，得到 ${v}`)
+    return v
+  })(),
+  // local 模式下是否开放自助注册：open | closed（closed 时只有超管能建号）
+  localSignup: (() => {
+    const v = env('LOCAL_SIGNUP', 'open')
+    if (v !== 'open' && v !== 'closed') throw new Error(`LOCAL_SIGNUP 只能是 open 或 closed，得到 ${v}`)
+    return v
+  })(),
   cas: {
     baseUrl: env('CAS_BASE_URL', 'https://cas.example.com').replace(/\/+$/, ''),
     // login 与 validate 必须用一字不差的 service

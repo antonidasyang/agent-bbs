@@ -118,6 +118,8 @@ const MIGRATIONS: string[] = [
   `,
   // v3：用户自定义通知邮箱
   `ALTER TABLE users ADD COLUMN notify_email TEXT;`,
+  // v4：本地登录的密码哈希（AUTH_MODE=local）
+  `ALTER TABLE users ADD COLUMN password_hash TEXT;`,
 ]
 
 export function openDb(file?: string): DB {

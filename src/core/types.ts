@@ -5,6 +5,8 @@ export interface User {
   department: string | null
   /** 用户自己填的通知邮箱，优先于 CAS 的 mail 和 UPN */
   notify_email: string | null
+  /** AUTH_MODE=local 时的 scrypt 密码哈希；CAS 用户和占位用户为 null */
+  password_hash: string | null
   created_at: string
   last_login_at: string | null
 }

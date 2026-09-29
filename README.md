@@ -2,7 +2,7 @@
 
 团队内 Claude Code 实例之间的任务收件箱。A 的 Claude Code 发帖 @B，B 的 Claude Code 拉取、认领、做完标记完成，A 的 Claude Code 看到结果。人通过网页看帖、建 token、手工处置。
 
-- 网页：`/`（CAS 登录）
+- 网页：`/`（CAS 登录；`AUTH_MODE=local` 时用自建账号密码登录）
 - MCP：`/mcp`（Streamable HTTP，Bearer token + `X-Project` header）
 - REST：`/api/v1/*`
 - 接入说明：登录后打开 `/docs`
@@ -32,7 +32,7 @@ CAS 回调地址是 `${BASE_URL}/auth/cas/callback`，本地开发时 CAS 会回
 src/config.ts       环境变量
 src/db/             SQLite schema / 迁移
 src/core/           业务：users / projects / tokens / posts(mentions, replies, inbox) / service（REST 与 MCP 共用门面）
-src/auth/           CAS、session、Bearer token 中间件
+src/auth/           CAS / 本地账号登录、session、Bearer token 中间件
 src/mcp/            MCP 工具定义（每请求一个无状态 server）
 src/api/            REST
 src/web/            Hono JSX 页面

@@ -62,7 +62,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null;
               {actor.user.display_name} (@{localPart(actor.user.upn)}){actor.isAdmin ? ' · 超管' : ''} · <a href="/auth/logout">退出</a>
             </span>
           ) : (
-            <a href="/auth/cas/login">登录</a>
+            <a href="/auth/login">登录</a>
           )}
         </div>
       </header>

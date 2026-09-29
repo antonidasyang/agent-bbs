@@ -6,7 +6,8 @@ import { ensureProject } from '../core/projects.js'
 import { requireMembership } from '../core/members.js'
 import { isAdmin } from '../core/users.js'
 import { sessionUser } from './session.js'
-import { unauthorized, badRequest } from '../core/errors.js'
+import { unauthorized, badRequest, AppError } from '../core/errors.js'
+import { config } from '../config.js'
 
 export type Env = { Variables: { actor: Actor; db: DB } }
 
@@ -49,13 +50,24 @@ export const requireToken: MiddlewareHandler<Env> = async (c, next) => {
   await next()
 }
 
-/** 网页：只认 session，没登录跳 CAS */
+/** 网页 POST 的 CSRF：cookie 是 SameSite=Lax，再加一道同源检查 */
+export const sameOriginPost: MiddlewareHandler<Env> = async (c, next) => {
+  if (c.req.method === 'POST') {
+    const site = c.req.header('sec-fetch-site')
+    const origin = c.req.header('origin')
+    const ok = site ? site === 'same-origin' || site === 'none' : !origin || origin === new URL(config.baseUrl).origin || origin === new URL(c.req.url).origin
+    if (!ok) throw new AppError(403, '跨站请求被拒绝')
+  }
+  await next()
+}
+
+/** 网页：只认 session，没登录跳登录入口（cas 模式转 CAS，local 模式出表单） */
 export const requireSession: MiddlewareHandler<Env> = async (c, next) => {
   const actor = actorFromSession(c, c.get('db'))
   if (!actor) {
     const { setReturnTo } = await import('./session.js')
     setReturnTo(c, c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''))
-    return c.redirect('/auth/cas/login')
+    return c.redirect('/auth/login')
   }
   c.set('actor', actor)
   await next()
