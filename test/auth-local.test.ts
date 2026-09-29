@@ -4,7 +4,8 @@ process.env.SESSION_SECRET = 'test'
 process.env.AUTH_MODE = 'local'
 process.env.ACCOUNT_DOMAIN = 'example.com'
 const { openDb } = await import('../src/db/index.js')
-const { registerLocalUser, loginLocal, changeLocalPassword, verifyPassword, hashPassword } = await import('../src/auth/local.js')
+const localAuth = await import('../src/auth/local.js')
+const { registerLocalUser, loginLocal, changeLocalPassword, verifyPassword, hashPassword } = localAuth
 const { getUser } = await import('../src/core/users.js')
 
 test('密码哈希：正确/错误密码', () => {
@@ -40,4 +41,42 @@ test('校验：非法账号、短密码；占位用户可认领', () => {
   const u = registerLocalUser(db, { username: 'lisi', displayName: '李四', password: 'password1' })
   assert.equal(u.display_name, '李四')
   assert.equal(loginLocal(db, 'lisi', 'password1').upn, 'lisi@example.com')
+})
+
+test('自助注册两段式：邮箱验证后才建号；过期/重复被拒', () => {
+  const { beginSignup, completeSignup } = localAuth
+  const db = openDb(':memory:')
+  assert.throws(() => beginSignup(db, { username: 'wangwu', displayName: '', email: 'not-an-email', password: 'password1' }), /邮箱格式/)
+  const s = beginSignup(db, { username: 'WangWu', displayName: '王五', email: 'WangWu@Example.org', password: 'password1' })
+  assert.equal(s.upn, 'wangwu@example.com')
+  assert.equal(s.email, 'wangwu@example.org')
+  assert.equal(getUser(db, s.upn), undefined, '验证前不建用户')
+  assert.throws(() => completeSignup(db, 'bogus'), /无效或已过期/)
+  const u = completeSignup(db, s.token)
+  assert.equal(u.display_name, '王五')
+  assert.equal(u.mail, 'wangwu@example.org')
+  assert.equal(loginLocal(db, 'wangwu', 'password1').upn, u.upn)
+  assert.throws(() => completeSignup(db, s.token), /无效|已注册/, 'token 用过即失效')
+  assert.throws(() => beginSignup(db, { username: 'wangwu', displayName: '', email: 'x@example.org', password: 'password1' }), /已注册/)
+  assert.throws(() => beginSignup(db, { username: 'zhaoliu', displayName: '', email: 'wangwu@example.org', password: 'password1' }), /邮箱已被/)
+  // 过期
+  const s2 = beginSignup(db, { username: 'zhaoliu', displayName: '', email: 'zhaoliu@example.org', password: 'password1' })
+  db.prepare('UPDATE signup_verifications SET expires_at = ? WHERE token = ?').run('2000-01-01T00:00:00Z', s2.token)
+  assert.throws(() => completeSignup(db, s2.token), /无效或已过期/)
+})
+
+test('图形验证码：对/错/重放/过期', async () => {
+  const { newCaptcha, checkCaptcha, renderCaptchaSvg } = await import('../src/auth/captcha.js')
+  const t = newCaptcha()
+  const svg = renderCaptchaSvg(t)
+  assert.match(svg, /^<svg/)
+  const answer = [...svg.matchAll(/<text[^>]*>([A-Z2-9])<\/text>/g)].map((m) => m[1]).join('')
+  assert.equal(answer.length, 5)
+  assert.throws(() => checkCaptcha(t, 'WRONG'), /验证码不对/)
+  assert.throws(() => checkCaptcha(t, answer), /已使用/, '答错即作废')
+  const t2 = newCaptcha()
+  const a2 = [...renderCaptchaSvg(t2).matchAll(/<text[^>]*>([A-Z2-9])<\/text>/g)].map((m) => m[1]).join('')
+  checkCaptcha(t2, a2.toLowerCase())
+  assert.throws(() => checkCaptcha(t2, a2), /已使用/, '重放')
+  assert.throws(() => checkCaptcha('garbage', 'X'), /已过期/)
 })

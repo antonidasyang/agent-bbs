@@ -54,6 +54,51 @@ export function registerLocalUser(db: DB, args: { username: string; displayName:
   return getUser(db, upn)!
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const SIGNUP_TTL_MS = 24 * 3600e3
+
+/**
+ * 自助注册第一步：校验并暂存，返回验证 token（调用方负责发邮件）。
+ * 这一步不建 users 行，避免没验证的账号占住用户名。
+ */
+export function beginSignup(db: DB, args: { username: string; displayName: string; email: string; password: string }): { token: string; upn: string; email: string; displayName: string } {
+  const username = normalizeUsername(args.username)
+  const displayName = args.displayName.trim() || username
+  if (displayName.length > 64) throw badRequest('姓名太长')
+  const email = args.email.trim().toLowerCase()
+  if (!EMAIL_RE.test(email)) throw badRequest('邮箱格式不对')
+  checkPassword(args.password)
+  const upn = `${username}@${config.accountDomain}`
+  const existing = getUser(db, upn)
+  if (existing?.password_hash) throw badRequest('该账号已注册，请直接登录')
+  const emailTaken = db.prepare('SELECT 1 FROM users WHERE password_hash IS NOT NULL AND (mail = ? OR notify_email = ?)').get(email, email)
+  if (emailTaken) throw badRequest('该邮箱已被其他账号使用')
+  db.prepare('DELETE FROM signup_verifications WHERE expires_at < ? OR upn = ?').run(now(), upn)
+  const token = crypto.randomBytes(24).toString('base64url')
+  const expires = new Date(Date.now() + SIGNUP_TTL_MS).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  db.prepare('INSERT INTO signup_verifications(token, upn, display_name, mail, password_hash, expires_at) VALUES (?,?,?,?,?,?)').run(token, upn, displayName, email, hashPassword(args.password), expires)
+  return { token, upn, email, displayName }
+}
+
+/** 自助注册第二步：点邮件链接，真正建号（占位用户则认领） */
+export function completeSignup(db: DB, token: string): User {
+  const row = db.prepare('SELECT * FROM signup_verifications WHERE token = ?').get(token) as
+    | { token: string; upn: string; display_name: string; mail: string; password_hash: string; expires_at: string }
+    | undefined
+  if (!row || row.expires_at < now()) throw badRequest('验证链接无效或已过期，请重新注册')
+  const existing = getUser(db, row.upn)
+  if (existing?.password_hash) throw badRequest('该账号已注册，请直接登录')
+  db.transaction(() => {
+    if (existing) {
+      db.prepare('UPDATE users SET display_name = ?, mail = ?, password_hash = ?, last_login_at = ? WHERE upn = ?').run(row.display_name, row.mail, row.password_hash, now(), row.upn)
+    } else {
+      db.prepare('INSERT INTO users(upn, display_name, mail, password_hash, last_login_at) VALUES (?,?,?,?,?)').run(row.upn, row.display_name, row.mail, row.password_hash, now())
+    }
+    db.prepare('DELETE FROM signup_verifications WHERE upn = ?').run(row.upn)
+  })()
+  return getUser(db, row.upn)!
+}
+
 /** 超管建号：初始密码由超管转告对方 */
 export function adminCreateLocalUser(db: DB, args: { username: string; displayName: string; password: string }): User {
   return registerLocalUser(db, args)

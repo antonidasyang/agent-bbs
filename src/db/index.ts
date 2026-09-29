@@ -120,6 +120,18 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE users ADD COLUMN notify_email TEXT;`,
   // v4：本地登录的密码哈希（AUTH_MODE=local）
   `ALTER TABLE users ADD COLUMN password_hash TEXT;`,
+  // v5：本地注册的邮箱验证（点链接前不建 users 行）
+  `
+  CREATE TABLE signup_verifications (
+    token TEXT PRIMARY KEY,
+    upn TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    mail TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    expires_at TEXT NOT NULL
+  );
+  `,
 ]
 
 export function openDb(file?: string): DB {

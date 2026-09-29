@@ -24,10 +24,16 @@ function getTransporter(): Transporter {
   return transporter
 }
 
+/** 发送失败抛错（注册验证邮件这类必须送达的场景用） */
+export async function sendMailOrThrow(to: string[], subject: string, text: string): Promise<void> {
+  if (!mailEnabled()) throw new Error('SMTP 未配置')
+  await getTransporter().sendMail({ from: config.smtp.from, to: to.join(', '), subject, text })
+}
+
 export async function sendMail(to: string[], subject: string, text: string): Promise<void> {
   if (!mailEnabled() || to.length === 0) return
   try {
-    await getTransporter().sendMail({ from: config.smtp.from, to: to.join(', '), subject, text })
+    await sendMailOrThrow(to, subject, text)
   } catch (e) {
     console.error('[mail] send failed', to, subject, e)
   }

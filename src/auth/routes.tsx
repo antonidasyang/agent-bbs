@@ -5,9 +5,11 @@ import { config } from '../config.js'
 import { casLoginUrl, casLogoutUrl, casValidate } from './cas.js'
 import { createSession, destroySession, popReturnTo, setReturnTo } from './session.js'
 import { upsertUserFromCas } from '../core/users.js'
-import { loginLocal, registerLocalUser, loginThrottle, loginFailed, loginSucceeded } from './local.js'
+import { loginLocal, beginSignup, completeSignup, loginThrottle, loginFailed, loginSucceeded } from './local.js'
+import { mailEnabled, sendMailOrThrow } from '../mail/index.js'
+import { newCaptcha, checkCaptcha, renderCaptchaSvg } from './captcha.js'
 import { AppError } from '../core/errors.js'
-import { LoginPage, RegisterPage } from '../web/auth-pages.js'
+import { LoginPage, RegisterPage, VerifySentPage } from '../web/auth-pages.js'
 
 export const auth = new Hono<Env>()
 const isLocal = config.authMode === 'local'
@@ -76,7 +78,13 @@ auth.post('/login', sameOriginPost, async (c) => {
 
 auth.get('/register', (c) => {
   if (!isLocal) return c.redirect('/auth/login')
-  return c.html(<RegisterPage flash={c.req.query('flash')} />)
+  return c.html(<RegisterPage flash={c.req.query('flash')} captcha={newCaptcha()} />)
+})
+
+auth.get('/captcha/:token{.+\\.svg}', (c) => {
+  const token = c.req.param('token').replace(/\.svg$/, '')
+  c.header('Cache-Control', 'no-store')
+  return c.body(renderCaptchaSvg(token), 200, { 'Content-Type': 'image/svg+xml' })
 })
 
 auth.post('/register', sameOriginPost, async (c) => {
@@ -84,12 +92,41 @@ auth.post('/register', sameOriginPost, async (c) => {
   const f = await c.req.parseBody()
   const username = String(f['username'] ?? '')
   const displayName = String(f['display_name'] ?? '')
+  const email = String(f['email'] ?? '')
+  const fail = (msg: string, status: 400 | 429 | 503 = 400) => c.html(<RegisterPage flash={msg} username={username} displayName={displayName} email={email} captcha={newCaptcha()} />, status)
+  const key = `signup:${clientKey(c)}`
   try {
-    const user = registerLocalUser(c.get('db'), { username, displayName, password: String(f['password'] ?? '') })
-    createSession(c, c.get('db'), user)
-    return c.redirect(popReturnTo(c))
+    loginThrottle(key)
+    checkCaptcha(String(f['captcha_token'] ?? ''), String(f['captcha'] ?? ''))
+    if (!mailEnabled()) return fail('服务器没有配置邮件，无法完成邮箱验证，请联系管理员开通账号', 503)
+    const s = beginSignup(c.get('db'), { username, displayName, email, password: String(f['password'] ?? '') })
+    loginFailed(key) // 每次发送计一次，防止刷邮件
+    const link = `${config.baseUrl}/auth/verify/${s.token}`
+    try {
+      await sendMailOrThrow(
+        [s.email],
+        '[agent-bbs] 验证你的邮箱',
+        `${s.displayName}，你好：\n\n你正在注册 agent-bbs 账号 @${s.upn.split('@')[0]}，点下面的链接完成验证（24 小时内有效）：\n\n${link}\n\n如果不是你本人操作，忽略这封邮件即可。\n\n—— agent-bbs 自动邮件`,
+      )
+    } catch (e) {
+      console.error('[mail] signup verification failed', s.email, e)
+      return fail('验证邮件发送失败，请稍后再试或联系管理员', 503)
+    }
+    return c.html(<VerifySentPage email={s.email} />)
   } catch (e) {
-    if (e instanceof AppError) return c.html(<RegisterPage flash={e.message} username={username} displayName={displayName} />, 400)
+    if (e instanceof AppError) return fail(e.message, e.status === 401 ? 429 : 400)
+    throw e
+  }
+})
+
+auth.get('/verify/:token', (c) => {
+  if (!isLocal) return c.redirect('/auth/login')
+  try {
+    const user = completeSignup(c.get('db'), c.req.param('token'))
+    createSession(c, c.get('db'), user)
+    return c.redirect('/tokens?flash=' + encodeURIComponent('邮箱已验证，注册完成'))
+  } catch (e) {
+    if (e instanceof AppError) return c.html(<RegisterPage flash={e.message} captcha={newCaptcha()} />, 400)
     throw e
   }
 })
