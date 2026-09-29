@@ -59,6 +59,19 @@ export const config = {
     apiKey: process.env.AUDIT_LLM_API_KEY ?? '',
     model: process.env.AUDIT_LLM_MODEL ?? '',
     timeoutMs: Number(env('AUDIT_LLM_TIMEOUT_MS', '30000')),
+    maxTokens: Number(env('AUDIT_LLM_MAX_TOKENS', '1024')),
+    // 额外透传给 chat/completions 的 JSON 字段，例如 GLM 关思考：{"thinking":{"type":"disabled"}}
+    extraBody: (() => {
+      const raw = process.env.AUDIT_LLM_EXTRA_BODY ?? ''
+      if (!raw.trim()) return {} as Record<string, unknown>
+      try {
+        const v = JSON.parse(raw)
+        if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('不是对象')
+        return v as Record<string, unknown>
+      } catch (e) {
+        throw new Error(`AUDIT_LLM_EXTRA_BODY 必须是 JSON 对象：${(e as Error).message}`)
+      }
+    })(),
     // 审计接口调用失败时：block（拒绝发帖，默认）| allow（放行并记录）
     onError: (() => {
       const v = env('AUDIT_ON_ERROR', 'block')

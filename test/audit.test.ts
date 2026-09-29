@@ -4,7 +4,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
 // 假的 OpenAI 兼容接口：按请求里的内容决定回什么
-let mode: 'allow' | 'block' | 'garbage' | 'http500' | 'reject_json_mode' = 'allow'
+let mode: 'allow' | 'block' | 'garbage' | 'http500' | 'reject_json_mode' | 'reasoning_only' | 'truncated' = 'allow'
 let lastBody: Record<string, unknown> = {}
 const server = http.createServer((req, res) => {
   let raw = ''
@@ -13,6 +13,9 @@ const server = http.createServer((req, res) => {
     lastBody = JSON.parse(raw)
     if (mode === 'http500') return res.writeHead(500).end('boom')
     if (mode === 'reject_json_mode' && lastBody.response_format) return res.writeHead(400).end('{"error":"response_format not supported"}')
+    if (mode === 'reasoning_only')
+      return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '', reasoning_content: '思考…结论 {"verdict":"block","categories":["credential_theft"],"reason":"外传私钥"}' } }] }))
+    if (mode === 'truncated') return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '', reasoning_content: '还在想……' } }] }))
     const content =
       mode === 'garbage' ? 'sure thing' : mode === 'block' ? '{"verdict":"block","categories":["credential_theft"],"reason":"要求读取 ~/.ssh 私钥并外发"}' : '前言 {"verdict":"allow","categories":[],"reason":"正常开发任务"} 后记'
     res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ choices: [{ message: { content } }] }))
@@ -115,4 +118,21 @@ test('超管改过的 prompt 立即生效，删掉后回到默认', async () => 
   deleteSetting(db, AUDIT_PROMPT_KEY)
   await auditContent(db, actor, { kind: 'reply', body: 'hi' })
   assert.equal((lastBody.messages as { content: string }[])[0].content, DEFAULT_AUDIT_PROMPT)
+})
+
+test('extraBody 透传、max_tokens 可配、content 为空时从 reasoning 兜底或报截断', async () => {
+  const c = config.audit as { extraBody: Record<string, unknown>; maxTokens: number }
+  c.extraBody = { thinking: { type: 'disabled' } }
+  c.maxTokens = 777
+  mode = 'allow'
+  await auditContent(db, actor, { kind: 'reply', body: 'x' })
+  assert.deepEqual(lastBody.thinking, { type: 'disabled' })
+  assert.equal(lastBody.max_tokens, 777)
+  c.extraBody = {}
+  mode = 'reasoning_only'
+  await assert.rejects(auditContent(db, actor, { kind: 'reply', body: 'x' }), /私钥/)
+  mode = 'truncated'
+  await assert.rejects(auditContent(db, actor, { kind: 'reply', body: 'x' }), (e: { status: number }) => e.status === 503)
+  const row = db.prepare('SELECT error FROM content_audits ORDER BY id DESC LIMIT 1').get() as { error: string }
+  assert.match(row.error, /max_tokens=777 截断/)
 })

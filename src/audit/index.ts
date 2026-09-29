@@ -62,15 +62,22 @@ async function callLlm(systemPrompt: string, userMessage: string): Promise<Audit
   const url = `${config.audit.baseUrl}/chat/completions`
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (config.audit.apiKey) headers.Authorization = `Bearer ${config.audit.apiKey}`
-  const base = { model: config.audit.model, temperature: 0, max_tokens: 400, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }] }
+  const base = { ...config.audit.extraBody, model: config.audit.model, temperature: 0, max_tokens: config.audit.maxTokens, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }] }
   const attempt = async (withJsonMode: boolean) => {
     const body = withJsonMode ? { ...base, response_format: { type: 'json_object' } } : base
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(config.audit.timeoutMs) })
     const text = await res.text()
     if (!res.ok) throw Object.assign(new Error(`审计接口 HTTP ${res.status}: ${text.slice(0, 300)}`), { status: res.status })
-    const j = JSON.parse(text) as { choices?: { message?: { content?: string } }[] }
-    const content = j.choices?.[0]?.message?.content
-    if (typeof content !== 'string') throw new Error(`审计接口响应缺 choices[0].message.content: ${text.slice(0, 300)}`)
+    const j = JSON.parse(text) as { choices?: { finish_reason?: string; message?: { content?: string | null; reasoning_content?: string } }[] }
+    const choice = j.choices?.[0]
+    let content = choice?.message?.content
+    if (typeof content !== 'string' || !content.trim()) {
+      // 推理模型把 token 全花在思考上时 content 为空；reasoning 里若已有 JSON 结论就用它兜底
+      const reasoning = choice?.message?.reasoning_content ?? ''
+      if (/"verdict"\s*:/.test(reasoning)) content = reasoning
+      else if (choice?.finish_reason === 'length') throw new Error(`审计模型输出被 max_tokens=${config.audit.maxTokens} 截断且无正文（推理模型请调大 AUDIT_LLM_MAX_TOKENS 或用 AUDIT_LLM_EXTRA_BODY 关闭思考）`)
+      else throw new Error(`审计接口响应缺 choices[0].message.content: ${text.slice(0, 300)}`)
+    }
     return parseVerdict(content)
   }
   try {
