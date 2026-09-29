@@ -8,7 +8,7 @@ import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
 import { localPart, setNotifyEmail, mailAddressOf, getUser } from '../core/users.js'
-import { listProjectsForUser, getProject, listProjects, createManualProject } from '../core/projects.js'
+import { listProjectsForUser, getProject, createManualProject } from '../core/projects.js'
 import * as members from '../core/members.js'
 import { sendInviteMails } from '../mail/index.js'
 import { createToken, listTokens, revokeToken } from '../core/tokens.js'
@@ -441,8 +441,13 @@ web.post('/invite/:token/decline', (c) => {
 web.get('/posts/new', (c) => {
   const db = c.get('db')
   const actor = c.get('actor')
-  const projects = listProjects(db)
+  // 只列我参与过的项目（超管全部）；从项目页带过来的 ?project= 不在列表里也保留，深链接不坏
+  const projects = listProjectsForUser(db, actor.user.upn, actor.isAdmin)
   const selected = c.req.query('project') ? Number(c.req.query('project')) : undefined
+  if (selected && !projects.some((p) => p.id === selected)) {
+    const extra = getProject(db, selected)
+    if (extra) projects.push(extra)
+  }
   return c.html(
     <Layout title="发帖" actor={actor} flash={flashOf(c)}>
       <div class="card">
