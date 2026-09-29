@@ -62,9 +62,10 @@ async function callLlm(systemPrompt: string, userMessage: string): Promise<Audit
   const url = `${config.audit.baseUrl}/chat/completions`
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (config.audit.apiKey) headers.Authorization = `Bearer ${config.audit.apiKey}`
-  const base = { ...config.audit.extraBody, model: config.audit.model, temperature: 0, max_tokens: config.audit.maxTokens, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }] }
-  const attempt = async (withJsonMode: boolean) => {
-    const body = withJsonMode ? { ...base, response_format: { type: 'json_object' } } : base
+  const base = { model: config.audit.model, temperature: 0, max_tokens: config.audit.maxTokens, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }] }
+  // full：带 response_format 和 AUDIT_LLM_EXTRA_BODY；接口 400 时退回最朴素的请求再试一次
+  const attempt = async (full: boolean) => {
+    const body = full ? { ...config.audit.extraBody, ...base, response_format: { type: 'json_object' } } : base
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(config.audit.timeoutMs) })
     const text = await res.text()
     if (!res.ok) throw Object.assign(new Error(`审计接口 HTTP ${res.status}: ${text.slice(0, 300)}`), { status: res.status })
@@ -83,7 +84,7 @@ async function callLlm(systemPrompt: string, userMessage: string): Promise<Audit
   try {
     return await attempt(true)
   } catch (e) {
-    // 有些兼容实现不认 response_format，400 时不带它再试一次
+    // 有些兼容实现不认 response_format 或 extraBody 里的字段，400 时都去掉再试一次
     if ((e as { status?: number }).status === 400) return attempt(false)
     throw e
   }

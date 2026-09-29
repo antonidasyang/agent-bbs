@@ -86,10 +86,13 @@ test('接口出错：AUDIT_ON_ERROR=block → 503；改成 allow → 放行并�
   ;(config.audit as { onError: string }).onError = 'block'
 })
 
-test('不认 response_format 的实现：400 后去掉它重试', async () => {
+test('不认 response_format / extraBody 的实现：400 后都去掉重试', async () => {
   mode = 'reject_json_mode'
+  ;(config.audit as { extraBody: Record<string, unknown> }).extraBody = { thinking: { type: 'disabled' } }
   await auditContent(db, actor, { kind: 'reply', body: 'ok' })
   assert.equal(lastBody.response_format, undefined)
+  assert.equal(lastBody.thinking, undefined)
+  ;(config.audit as { extraBody: Record<string, unknown> }).extraBody = {}
 })
 
 test('service 层：发帖/回帖被拦时不落库', async () => {
