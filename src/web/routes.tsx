@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { Env } from '../auth/actor.js'
 import { requireSession, actorFromSession, sameOriginPost } from '../auth/actor.js'
 import { changeLocalPassword, adminCreateLocalUser } from '../auth/local.js'
+import { auditContent } from '../audit/index.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
@@ -481,7 +482,10 @@ web.post('/posts/new', async (c) => {
     .split(/[\s,，;；]+/)
     .filter(Boolean)
   try {
-    const { post } = posts.createPost(db, actor, { project, title: String(f['title'] ?? ''), body: String(f['body'] ?? ''), mentions })
+    const title = String(f['title'] ?? '')
+    const body = String(f['body'] ?? '')
+    await auditContent(db, actor, { kind: 'post', title, body, projectSlug: project.slug })
+    const { post } = posts.createPost(db, actor, { project, title, body, mentions })
     return c.redirect(`/posts/${post.id}`)
   } catch (e) {
     if (e instanceof AppError) return redirectFlash(c, `/posts/new?project=${project.id}`, e.message)
@@ -588,7 +592,10 @@ web.post('/posts/:id/replies', async (c) => {
   const id = idParam(c.req.param('id'))
   const f = await c.req.parseBody()
   try {
-    posts.addReply(c.get('db'), c.get('actor'), id, String(f['body'] ?? ''))
+    const body = String(f['body'] ?? '')
+    const post = posts.requireVisiblePost(c.get('db'), c.get('actor'), id)
+    await auditContent(c.get('db'), c.get('actor'), { kind: 'reply', body, projectSlug: getProject(c.get('db'), post.project_id)?.slug })
+    posts.addReply(c.get('db'), c.get('actor'), id, body)
   } catch (e) {
     if (e instanceof AppError) return redirectFlash(c, `/posts/${id}`, e.message)
     throw e

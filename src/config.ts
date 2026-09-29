@@ -53,6 +53,19 @@ export const config = {
     return v
   })(),
   attachmentDir: path.resolve(env('ATTACHMENT_DIR', path.join(path.resolve(env('DATA_DIR', './data')), 'attachments'))),
+  // 发帖/回帖前的 LLM 安全审计（OpenAI 兼容接口）；BASE_URL 或 MODEL 为空则不审计
+  audit: {
+    baseUrl: (process.env.AUDIT_LLM_BASE_URL ?? '').replace(/\/+$/, ''),
+    apiKey: process.env.AUDIT_LLM_API_KEY ?? '',
+    model: process.env.AUDIT_LLM_MODEL ?? '',
+    timeoutMs: Number(env('AUDIT_LLM_TIMEOUT_MS', '30000')),
+    // 审计接口调用失败时：block（拒绝发帖，默认）| allow（放行并记录）
+    onError: (() => {
+      const v = env('AUDIT_ON_ERROR', 'block')
+      if (v !== 'block' && v !== 'allow') throw new Error(`AUDIT_ON_ERROR 只能是 block 或 allow，得到 ${v}`)
+      return v
+    })(),
+  },
   attachmentMaxBytes: Number(env('ATTACHMENT_MAX_MB', '100')) * 1024 * 1024,
   mcpAttachmentMaxBytes: 5 * 1024 * 1024,
   smtp: {

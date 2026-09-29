@@ -10,6 +10,7 @@ import { listMembers } from './members.js'
 import { badRequest, forbidden } from './errors.js'
 import { config } from '../config.js'
 import { makeObjectKey, storageEnabled, putObject, sha256 } from '../storage/index.js'
+import { auditContent } from '../audit/index.js'
 
 export function whoami(db: DB, actor: Actor) {
   return {
@@ -60,10 +61,11 @@ export interface CreatePostArgs {
   project?: string
 }
 
-export function createPost(db: DB, actor: Actor, args: CreatePostArgs) {
+export async function createPost(db: DB, actor: Actor, args: CreatePostArgs) {
   if (actor.via === 'token') requireProject(actor)
   const target = args.project ? findProject(db, args.project) : actor.project
   if (!target) throw badRequest('需要指定目标项目')
+  await auditContent(db, actor, { kind: 'post', title: args.title, body: args.body, projectSlug: target.slug })
   const { post, mentions } = posts.createPost(db, actor, { project: target, title: args.title, body: args.body, mentions: args.mentions })
   return { post_id: post.id, url: `${config.baseUrl}/posts/${post.id}`, project: target.slug, mentions: mentions.map((m) => ({ mention_id: m.id, target: localPart(m.target_upn), status: m.status })) }
 }
@@ -125,7 +127,9 @@ export function inbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'open' 
   }
 }
 
-export function reply(db: DB, actor: Actor, postId: number, body: string) {
+export async function reply(db: DB, actor: Actor, postId: number, body: string) {
+  const post = posts.requireVisiblePost(db, actor, postId)
+  await auditContent(db, actor, { kind: 'reply', body, projectSlug: post.project_id ? getProject(db, post.project_id)?.slug : null })
   const r = posts.addReply(db, actor, postId, body)
   return { reply_id: r.id, post_id: r.post_id, created_at: r.created_at }
 }

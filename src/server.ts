@@ -13,10 +13,12 @@ import { AppError, unauthorized } from './core/errors.js'
 import { installMailNotifier } from './mail/index.js'
 import { cleanupSessions } from './auth/session.js'
 import { storageDescription } from './storage/index.js'
+import { auditDescription } from './audit/index.js'
 
 const db = openDb()
 installMailNotifier()
 console.log(`[storage] 附件存储：${storageDescription()}`)
+console.log(`[audit] 发帖安全审计：${auditDescription()}`)
 setInterval(() => cleanupSessions(db), 6 * 3600e3).unref()
 
 const app = new Hono<Env>()

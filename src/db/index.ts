@@ -132,6 +132,26 @@ const MIGRATIONS: string[] = [
     expires_at TEXT NOT NULL
   );
   `,
+  // v6：发帖/回帖前的 LLM 安全审计记录（被拦的内容不会进 posts/replies，这里留个底）
+  `
+  CREATE TABLE content_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    actor_upn TEXT NOT NULL,
+    project_slug TEXT,
+    title TEXT,
+    excerpt TEXT NOT NULL,
+    body_sha256 TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    categories TEXT NOT NULL,
+    reason TEXT,
+    model TEXT,
+    latency_ms INTEGER,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  );
+  CREATE INDEX idx_content_audits_verdict ON content_audits(verdict, id);
+  `,
 ]
 
 export function openDb(file?: string): DB {

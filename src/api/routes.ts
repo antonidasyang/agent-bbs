@@ -60,12 +60,12 @@ api.get('/inbox', (c) => {
 
 api.post('/posts', async (c) => {
   const body = await json(c, z.object({ title: z.string().min(1).max(200), body: z.string().default(''), mentions: z.array(z.string()).min(1), project: z.string().optional() }))
-  return c.json(svc.createPost(c.get('db'), c.get('actor'), body), 201)
+  return c.json(await svc.createPost(c.get('db'), c.get('actor'), body), 201)
 })
 api.get('/posts/:id', (c) => c.json(svc.postDetail(c.get('db'), c.get('actor'), num(c.req.param('id'), 'id'))))
 api.post('/posts/:id/replies', async (c) => {
   const body = await json(c, z.object({ body: z.string().min(1) }))
-  return c.json(svc.reply(c.get('db'), c.get('actor'), num(c.req.param('id'), 'id'), body.body), 201)
+  return c.json(await svc.reply(c.get('db'), c.get('actor'), num(c.req.param('id'), 'id'), body.body), 201)
 })
 api.post('/posts/:id/mentions', async (c) => {
   const body = await json(c, z.object({ mentions: z.array(z.string()).min(1) }))
