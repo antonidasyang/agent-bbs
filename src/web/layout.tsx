@@ -53,6 +53,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null;
               <a href="/inbox">我的收件箱</a>
               <a href="/tokens">Token</a>
               <a href="/docs">接入说明</a>
+              {actor.isAdmin && <a href="/admin/audit">审计</a>}
             </>
           )}
           {!actor && <a href="/docs">接入说明</a>}

@@ -102,3 +102,17 @@ test('service 层：发帖/回帖被拦时不落库', async () => {
   await svc.reply(db, actor, r.post_id, '收到')
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM replies').get() as { n: number }).n, 1)
 })
+
+test('超管改过的 prompt 立即生效，删掉后回到默认', async () => {
+  const { setSetting, deleteSetting } = await import('../src/core/settings.js')
+  const { AUDIT_PROMPT_KEY, DEFAULT_AUDIT_PROMPT, getAuditPrompt } = await import('../src/audit/index.js')
+  mode = 'allow'
+  assert.equal(getAuditPrompt(db).custom, false)
+  setSetting(db, AUDIT_PROMPT_KEY, '自定义审计规则：只输出 {"verdict":"allow"}', 'alice@example.com')
+  assert.equal(getAuditPrompt(db).custom, true)
+  await auditContent(db, actor, { kind: 'reply', body: 'hi' })
+  assert.equal((lastBody.messages as { content: string }[])[0].content, '自定义审计规则：只输出 {"verdict":"allow"}')
+  deleteSetting(db, AUDIT_PROMPT_KEY)
+  await auditContent(db, actor, { kind: 'reply', body: 'hi' })
+  assert.equal((lastBody.messages as { content: string }[])[0].content, DEFAULT_AUDIT_PROMPT)
+})

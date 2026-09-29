@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import type { Env } from '../auth/actor.js'
 import { requireSession, actorFromSession, sameOriginPost } from '../auth/actor.js'
 import { changeLocalPassword, adminCreateLocalUser } from '../auth/local.js'
-import { auditContent } from '../audit/index.js'
+import { auditContent, auditDescription, getAuditPrompt, AUDIT_PROMPT_KEY, DEFAULT_AUDIT_PROMPT } from '../audit/index.js'
+import { setSetting, deleteSetting } from '../core/settings.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
@@ -790,6 +791,118 @@ web.post('/tokens', async (c) => {
 web.post('/tokens/:id/revoke', (c) => {
   revokeToken(c.get('db'), c.get('actor').user.upn, idParam(c.req.param('id')))
   return redirectFlash(c, '/tokens', '已吊销')
+})
+
+// ---------- 超管：审计 prompt 与审计记录 ----------
+function requireAdmin(actor: { isAdmin: boolean }) {
+  if (!actor.isAdmin) throw new AppError(403, '只有超管能访问')
+}
+web.get('/admin/audit', (c) => {
+  const db = c.get('db')
+  const actor = c.get('actor')
+  requireAdmin(actor)
+  const p = getAuditPrompt(db)
+  const verdict = c.req.query('verdict') || 'block'
+  const rows = db
+    .prepare(`SELECT * FROM content_audits ${verdict === 'all' ? '' : 'WHERE verdict = ?'} ORDER BY id DESC LIMIT 50`)
+    .all(...(verdict === 'all' ? [] : [verdict])) as { id: number; kind: string; actor_upn: string; project_slug: string | null; title: string | null; excerpt: string; verdict: string; categories: string; reason: string | null; latency_ms: number | null; error: string | null; created_at: string }[]
+  return c.html(
+    <Layout title="安全审计" actor={actor} flash={flashOf(c)}>
+      <div class="card">
+        <h2>审计模型</h2>
+        <p class="small">{auditDescription()}</p>
+        <p class="muted small">模型地址、密钥、超时、失败策略在服务器 .env 里配（AUDIT_LLM_*、AUDIT_ON_ERROR），改了要重启。下面的 prompt 改了立即生效。</p>
+      </div>
+      <div class="card">
+        <h2>审计 prompt（system 消息）</h2>
+        <p class="muted small">
+          {p.custom ? `当前是自定义版本，${p.updated_by ? localPart(p.updated_by) : '?'} 于 ${fmt(p.updated_at)} 修改。` : '当前是内置默认版本。'}
+          待审内容会作为 user 消息、包在 &lt;content&gt; 标签里跟在后面；模型必须回 {'{"verdict":"allow"|"block","categories":[],"reason":""}'} 这样的 JSON，改 prompt 时请保留这个输出要求。
+        </p>
+        <form method="post" action="/admin/audit/prompt">
+          <textarea name="prompt" style="min-height:420px;font-size:13px">{p.prompt}</textarea>
+          <p style="margin-top:10px">
+            <button class="primary" type="submit">保存</button>
+          </p>
+        </form>
+        {p.custom && (
+          <form class="inline" method="post" action="/admin/audit/prompt/reset">
+            <button class="danger" type="submit">恢复内置默认</button>
+          </form>
+        )}
+        {p.custom && (
+          <details style="margin-top:12px">
+            <summary class="small">查看内置默认版本</summary>
+            <pre class="cmd" style="white-space:pre-wrap">{DEFAULT_AUDIT_PROMPT}</pre>
+          </details>
+        )}
+      </div>
+      <div class="card">
+        <h2>审计记录</h2>
+        <p class="tabs small">
+          <a href="/admin/audit?verdict=block" class={verdict === 'block' ? 'on' : ''}>被拦截</a>
+          <a href="/admin/audit?verdict=error" class={verdict === 'error' ? 'on' : ''}>出错</a>
+          <a href="/admin/audit?verdict=allow" class={verdict === 'allow' ? 'on' : ''}>放行</a>
+          <a href="/admin/audit?verdict=all" class={verdict === 'all' ? 'on' : ''}>全部</a>
+          <span class="muted">（最近 50 条）</span>
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>谁</th>
+              <th>类型</th>
+              <th>判定</th>
+              <th>原因</th>
+              <th>内容摘录</th>
+              <th>耗时</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr>
+                <td class="muted">{fmt(r.created_at)}</td>
+                <td>{localPart(r.actor_upn)}<div class="muted small">{r.project_slug ?? ''}</div></td>
+                <td>{r.kind === 'post' ? '发帖' : '回帖'}</td>
+                <td>
+                  <span class={`badge ${r.verdict === 'block' ? 'disabled' : r.verdict === 'allow' ? 'done' : 'pending'}`}>{r.verdict}</span>
+                  <div class="muted small">{JSON.parse(r.categories || '[]').join(', ')}</div>
+                </td>
+                <td class="small">{r.reason ?? r.error ?? ''}</td>
+                <td class="small" style="max-width:360px">
+                  {r.title && <b>{r.title}</b>}
+                  <div style="white-space:pre-wrap;word-break:break-all">{r.excerpt}</div>
+                </td>
+                <td class="muted small">{r.latency_ms != null ? `${r.latency_ms}ms` : ''}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colspan={7} class="muted">暂无记录</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Layout>,
+  )
+})
+web.post('/admin/audit/prompt', async (c) => {
+  const actor = c.get('actor')
+  requireAdmin(actor)
+  const f = await c.req.parseBody()
+  const prompt = String(f['prompt'] ?? '').replace(/\r\n/g, '\n').trim()
+  if (prompt.length < 50) return redirectFlash(c, '/admin/audit', 'prompt 太短，不像是完整的审计说明')
+  if (prompt.length > 20000) return redirectFlash(c, '/admin/audit', 'prompt 太长（上限 20000 字）')
+  if (!/verdict/.test(prompt)) return redirectFlash(c, '/admin/audit', 'prompt 里必须保留对 verdict JSON 输出格式的要求，否则模型的回答无法解析')
+  if (prompt === DEFAULT_AUDIT_PROMPT.trim()) deleteSetting(c.get('db'), AUDIT_PROMPT_KEY)
+  else setSetting(c.get('db'), AUDIT_PROMPT_KEY, prompt, actor.user.upn)
+  return redirectFlash(c, '/admin/audit', '审计 prompt 已保存，立即生效')
+})
+web.post('/admin/audit/prompt/reset', (c) => {
+  requireAdmin(c.get('actor'))
+  deleteSetting(c.get('db'), AUDIT_PROMPT_KEY)
+  return redirectFlash(c, '/admin/audit', '已恢复内置默认 prompt')
 })
 
 // ---------- 接入说明：不需要登录，登录了则显示导航 ----------

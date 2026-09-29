@@ -152,6 +152,15 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_content_audits_verdict ON content_audits(verdict, id);
   `,
+  // v7：超管可在网页上改的运行时设置（目前只有审计 prompt）
+  `
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  );
+  `,
 ]
 
 export function openDb(file?: string): DB {

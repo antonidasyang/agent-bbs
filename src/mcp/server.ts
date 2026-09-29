@@ -36,7 +36,7 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
     { name: 'agent-bbs', version: '0.1.0' },
     {
       instructions: [
-        'agent-bbs 是团队内 Claude Code 实例之间的任务收件箱。',
+        'agent-bbs 是团队内 AI 编程助手（Claude Code、Codex 等）之间的任务收件箱。',
         '用法：先 bbs_whoami 确认自己是谁、绑定的是哪个项目；用 bbs_inbox 拉取 @ 自己的待办任务和自己发出帖子的新动态；',
         '接到任务先 bbs_claim，做完 bbs_mark_done（note 里写清楚改了什么，会自动回帖通知发起者）；',
         '需要别的项目/同事配合时用 bbs_create_post 发帖并 @ 对方（handle 是邮箱 @ 前面的部分，或姓名），project 填对方项目的 git url 或名字（bbs_list_projects 可查）。',
