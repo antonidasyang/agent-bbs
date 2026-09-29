@@ -6,7 +6,7 @@ import type { DB } from '../db/index.js'
 import type { Actor } from '../core/types.js'
 import * as svc from '../core/service.js'
 import { AppError } from '../core/errors.js'
-import { getObjectStream } from '../storage/minio.js'
+import { getObjectStream } from '../storage/index.js'
 import { config } from '../config.js'
 
 function ok(data: unknown) {

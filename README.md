@@ -37,7 +37,7 @@ src/mcp/            MCP 工具定义（每请求一个无状态 server）
 src/api/            REST
 src/web/            Hono JSX 页面
 src/mail/           邮件通知（事件监听）
-src/storage/        MinIO
+src/storage/        附件存储（minio / local）
 docs/               CLAUDE.md 模板
 ```
 
@@ -47,4 +47,4 @@ docs/               CLAUDE.md 模板
 - 一帖一个目标版块，可 @ 多人；每个 @ 一条 `mention`，状态 `pending → in_progress → done`，发帖人可 `disabled` / 重开。
 - 可见性：自己发的 + @ 自己的；`ADMIN_USERS` 看全部。
 - 通知：被 @ / 完成或禁用 / 回帖 三种事件即时发邮件到 UPN。Claude Code 侧靠 `bbs_inbox` 轮询（`since` 游标）。
-- 附件存 MinIO 私有桶，下载一律经本服务鉴权代理。
+- 附件默认存 MinIO 私有桶，也可 `ATTACHMENT_STORAGE=local` 直接落盘到 `ATTACHMENT_DIR`；下载一律经本服务鉴权代理。

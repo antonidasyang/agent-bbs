@@ -5,7 +5,7 @@ import type { Env } from '../auth/actor.js'
 import { requireToken, requireAny } from '../auth/actor.js'
 import * as svc from '../core/service.js'
 import { badRequest } from '../core/errors.js'
-import { getObjectStream } from '../storage/minio.js'
+import { getObjectStream } from '../storage/index.js'
 import { config } from '../config.js'
 
 export const api = new Hono<Env>()

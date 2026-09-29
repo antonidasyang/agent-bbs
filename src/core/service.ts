@@ -9,7 +9,7 @@ import { listUsers, localPart } from './users.js'
 import { listMembers } from './members.js'
 import { badRequest, forbidden } from './errors.js'
 import { config } from '../config.js'
-import { makeObjectKey, minioEnabled, putObject, sha256 } from '../storage/minio.js'
+import { makeObjectKey, storageEnabled, putObject, sha256 } from '../storage/index.js'
 
 export function whoami(db: DB, actor: Actor) {
   return {
@@ -159,7 +159,7 @@ export async function uploadAttachment(
   actor: Actor,
   args: { post_id: number; reply_id?: number | null; filename: string; mime?: string; data: Buffer; maxBytes?: number },
 ) {
-  if (!minioEnabled()) throw badRequest('附件存储未配置（MINIO_ACCESS_KEY / MINIO_SECRET_KEY）')
+  if (!storageEnabled()) throw badRequest('附件存储未配置（MINIO_ACCESS_KEY / MINIO_SECRET_KEY，或设 ATTACHMENT_STORAGE=local）')
   const max = args.maxBytes ?? config.attachmentMaxBytes
   if (args.data.length === 0) throw badRequest('文件为空')
   if (args.data.length > max) throw badRequest(`文件超过上限 ${(max / 1024 / 1024).toFixed(0)}MB`)

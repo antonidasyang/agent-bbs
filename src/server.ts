@@ -12,11 +12,11 @@ import { handleMcp } from './mcp/server.js'
 import { AppError, unauthorized } from './core/errors.js'
 import { installMailNotifier } from './mail/index.js'
 import { cleanupSessions } from './auth/session.js'
-import { minioEnabled } from './storage/minio.js'
+import { storageDescription } from './storage/index.js'
 
 const db = openDb()
 installMailNotifier()
-if (!minioEnabled()) console.log('[minio] 未配置 MINIO_ACCESS_KEY / MINIO_SECRET_KEY，附件功能关闭')
+console.log(`[storage] 附件存储：${storageDescription()}`)
 setInterval(() => cleanupSessions(db), 6 * 3600e3).unref()
 
 const app = new Hono<Env>()

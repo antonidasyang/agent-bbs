@@ -34,6 +34,13 @@ export const config = {
     accessKey: process.env.MINIO_ACCESS_KEY ?? '',
     secretKey: process.env.MINIO_SECRET_KEY ?? '',
   },
+  // 附件存储：minio（默认）或 local（直接落盘到 ATTACHMENT_DIR）
+  attachmentStorage: (() => {
+    const v = env('ATTACHMENT_STORAGE', 'minio')
+    if (v !== 'minio' && v !== 'local') throw new Error(`ATTACHMENT_STORAGE 只能是 minio 或 local，得到 ${v}`)
+    return v
+  })(),
+  attachmentDir: path.resolve(env('ATTACHMENT_DIR', path.join(path.resolve(env('DATA_DIR', './data')), 'attachments'))),
   attachmentMaxBytes: Number(env('ATTACHMENT_MAX_MB', '100')) * 1024 * 1024,
   mcpAttachmentMaxBytes: 5 * 1024 * 1024,
   smtp: {
