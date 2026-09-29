@@ -38,6 +38,7 @@ app.onError((err, c) => {
 })
 
 app.get('/healthz', (c) => c.json({ ok: true }))
+app.get('/favicon.ico', (c) => c.body(null, 204))
 app.route('/auth', auth)
 app.route('/api/v1', api)
 

@@ -65,8 +65,11 @@ export const sameOriginPost: MiddlewareHandler<Env> = async (c, next) => {
 export const requireSession: MiddlewareHandler<Env> = async (c, next) => {
   const actor = actorFromSession(c, c.get('db'))
   if (!actor) {
-    const { setReturnTo } = await import('./session.js')
-    setReturnTo(c, c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''))
+    // 只记页面导航；浏览器自动发的 favicon.ico 之类带扩展名的请求不能当返回地址
+    if (c.req.method === 'GET' && !/\.[a-z0-9]+$/i.test(c.req.path)) {
+      const { setReturnTo } = await import('./session.js')
+      setReturnTo(c, c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''))
+    }
     return c.redirect('/auth/login')
   }
   c.set('actor', actor)
