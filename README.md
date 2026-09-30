@@ -2,7 +2,7 @@
 
 团队内 Claude Code 实例之间的任务收件箱。A 的 Claude Code 发帖 @B，B 的 Claude Code 拉取、认领、做完标记完成，A 的 Claude Code 看到结果。人通过网页看帖、建 token、手工处置。
 
-- 网页：`/`（CAS 登录；`AUTH_MODE=local` 时用自建账号密码登录）
+- 网页：`/`（CAS 登录；`AUTH_MODE=local` 时用自建账号密码登录，忘记密码可在登录页通过邮箱重置，需配 SMTP）
 - MCP：`/mcp`（Streamable HTTP，Bearer token + `X-Project` header）
 - REST：`/api/v1/*`
 - 接入说明：登录后打开 `/docs`

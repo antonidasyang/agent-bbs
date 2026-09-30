@@ -4,12 +4,12 @@ import { sameOriginPost } from './actor.js'
 import { config } from '../config.js'
 import { casLoginUrl, casLogoutUrl, casValidate } from './cas.js'
 import { createSession, destroySession, popReturnTo, setReturnTo } from './session.js'
-import { upsertUserFromCas } from '../core/users.js'
-import { loginLocal, beginSignup, completeSignup, loginThrottle, loginFailed, loginSucceeded } from './local.js'
-import { mailEnabled, sendMailOrThrow } from '../mail/index.js'
+import { upsertUserFromCas, localPart } from '../core/users.js'
+import { loginLocal, beginSignup, completeSignup, beginPasswordReset, checkResetToken, completePasswordReset, loginThrottle, loginFailed, loginSucceeded } from './local.js'
+import { mailEnabled, sendMail, sendMailOrThrow } from '../mail/index.js'
 import { newCaptcha, checkCaptcha, renderCaptchaSvg } from './captcha.js'
 import { AppError } from '../core/errors.js'
-import { LoginPage, RegisterPage, VerifySentPage } from '../web/auth-pages.js'
+import { LoginPage, RegisterPage, VerifySentPage, ForgotPage, ResetSentPage, ResetPage } from '../web/auth-pages.js'
 
 export const auth = new Hono<Env>()
 const isLocal = config.authMode === 'local'
@@ -117,6 +117,82 @@ auth.post('/register', sameOriginPost, async (c) => {
     if (e instanceof AppError) return fail(e.message, e.status === 401 ? 429 : 400)
     throw e
   }
+})
+
+// ---------- 邮箱重置密码 ----------
+auth.get('/forgot', (c) => {
+  if (!isLocal) return c.redirect('/auth/login')
+  return c.html(<ForgotPage flash={c.req.query('flash')} captcha={newCaptcha()} />)
+})
+
+auth.post('/forgot', sameOriginPost, async (c) => {
+  if (!isLocal) return c.redirect('/auth/login')
+  const f = await c.req.parseBody()
+  const identifier = String(f['identifier'] ?? '').trim()
+  const fail = (msg: string, status: 400 | 429 | 503 = 400) => c.html(<ForgotPage flash={msg} identifier={identifier} captcha={newCaptcha()} />, status)
+  const key = `reset:${clientKey(c)}`
+  try {
+    loginThrottle(key)
+    checkCaptcha(String(f['captcha_token'] ?? ''), String(f['captcha'] ?? ''))
+    if (!identifier) return fail('请填写账号或邮箱')
+    if (!mailEnabled()) return fail('服务器没有配置邮件，无法通过邮箱重置，请联系管理员', 503)
+    loginFailed(key) // 每次申请计一次，防止刷邮件
+    for (const r of beginPasswordReset(c.get('db'), identifier)) {
+      const link = `${config.baseUrl}/auth/reset/${r.token}`
+      // 不等发送结果：查不到账号时也是立刻返回同一页，响应时间上不泄露账号是否存在
+      void sendMail(
+        r.to,
+        '[agent-bbs] 重置密码',
+        `${r.user.display_name}，你好：\n\n有人申请重置 agent-bbs 账号 @${localPart(r.user.upn)} 的密码，点下面的链接设置新密码（1 小时内有效，用一次即失效）：\n\n${link}\n\n如果不是你本人操作，忽略这封邮件即可，密码不会变。\n\n—— agent-bbs 自动邮件`,
+      )
+    }
+    return c.html(<ResetSentPage />)
+  } catch (e) {
+    if (e instanceof AppError) return fail(e.message, e.status === 401 ? 429 : 400)
+    throw e
+  }
+})
+
+auth.get('/reset/:token', (c) => {
+  if (!isLocal) return c.redirect('/auth/login')
+  c.header('Referrer-Policy', 'no-referrer')
+  c.header('Cache-Control', 'no-store')
+  const token = c.req.param('token')
+  try {
+    const user = checkResetToken(c.get('db'), token)
+    return c.html(<ResetPage token={token} username={localPart(user.upn)} />)
+  } catch (e) {
+    if (e instanceof AppError) return c.html(<ForgotPage flash={e.message} captcha={newCaptcha()} />, 400)
+    throw e
+  }
+})
+
+auth.post('/reset/:token', sameOriginPost, async (c) => {
+  if (!isLocal) return c.redirect('/auth/login')
+  c.header('Referrer-Policy', 'no-referrer')
+  c.header('Cache-Control', 'no-store')
+  const token = c.req.param('token')
+  const db = c.get('db')
+  const f = await c.req.parseBody()
+  const pw = String(f['new_password'] ?? '')
+  let username: string
+  try {
+    username = localPart(checkResetToken(db, token).upn)
+  } catch (e) {
+    if (e instanceof AppError) return c.html(<ForgotPage flash={e.message} captcha={newCaptcha()} />, 400)
+    throw e
+  }
+  const again = (msg: string) => c.html(<ResetPage token={token} username={username} flash={msg} />, 400)
+  if (pw !== String(f['confirm_password'] ?? '')) return again('两次输入的密码不一致')
+  try {
+    completePasswordReset(db, token, pw)
+  } catch (e) {
+    if (e instanceof AppError) return again(e.message)
+    throw e
+  }
+  loginSucceeded(`user:${username}`)
+  destroySession(c, db) // 库里的会话已全部作废，这里清掉当前浏览器的 cookie
+  return c.redirect('/auth/login?flash=' + encodeURIComponent('密码已重置，请用新密码登录'))
 })
 
 auth.get('/verify/:token', (c) => {

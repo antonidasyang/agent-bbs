@@ -59,6 +59,7 @@ export function registerLocalUser(db: DB, args: { username: string; displayName:
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const SIGNUP_TTL_MS = 24 * 3600e3
+const isoAt = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
 
 /**
  * 自助注册第一步：校验并暂存，返回验证 token（调用方负责发邮件）。
@@ -78,7 +79,7 @@ export function beginSignup(db: DB, args: { username: string; displayName: strin
   if (emailTaken) throw badRequest('该邮箱已被其他账号使用')
   db.prepare('DELETE FROM signup_verifications WHERE expires_at < ? OR upn = ?').run(now(), upn)
   const token = crypto.randomBytes(24).toString('base64url')
-  const expires = new Date(Date.now() + SIGNUP_TTL_MS).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  const expires = isoAt(Date.now() + SIGNUP_TTL_MS)
   db.prepare('INSERT INTO signup_verifications(token, upn, display_name, mail, password_hash, expires_at) VALUES (?,?,?,?,?,?)').run(token, upn, displayName, email, hashPassword(args.password), expires)
   return { token, upn, email, displayName }
 }
@@ -125,6 +126,75 @@ export function changeLocalPassword(db: DB, upn: string, oldPw: string, newPw: s
   if (!user || !verifyPassword(oldPw, user.password_hash)) throw badRequest('原密码不对')
   checkPassword(newPw)
   db.prepare('UPDATE users SET password_hash = ? WHERE upn = ?').run(hashPassword(newPw), upn)
+}
+
+// ---- 邮箱重置密码 ----
+const RESET_TTL_MS = 3600e3
+const RESET_COOLDOWN_MS = 60e3
+const hashResetToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex')
+
+/** 重置邮件发到哪：注册时验证过的邮箱 + 自填的通知邮箱。不拿 UPN 兜底——ACCOUNT_DOMAIN 是公共邮箱域时，账号@域 可能是别人的信箱 */
+export function resetMailAddresses(u: Pick<User, 'mail' | 'notify_email'>): string[] {
+  return [...new Set([u.mail, u.notify_email].filter((x): x is string => !!x && EMAIL_RE.test(x)).map((x) => x.toLowerCase()))]
+}
+
+/** 按账号或邮箱找已注册（有密码）的本地账号；一个邮箱可能被几个账号填成通知邮箱，所以返回数组 */
+function findResetUsers(db: DB, identifier: string): User[] {
+  const id = identifier.trim().toLowerCase()
+  if (!id) return []
+  if (id.includes('@')) {
+    const byMail = db.prepare('SELECT * FROM users WHERE password_hash IS NOT NULL AND (mail = ? OR notify_email = ?) LIMIT 5').all(id, id) as User[]
+    if (byMail.length || !id.endsWith(`@${config.accountDomain}`)) return byMail
+  }
+  let upn: string
+  try {
+    upn = `${normalizeUsername(id)}@${config.accountDomain}`
+  } catch {
+    return []
+  }
+  const u = getUser(db, upn)
+  return u?.password_hash ? [u] : []
+}
+
+/**
+ * 重置第一步：给匹配到的账号各签一个一次性 token（调用方负责发邮件）。
+ * 查不到、没有可用邮箱、一分钟内刚发过都返回空数组，调用方对外一律回同一句话，不暴露账号是否存在。
+ */
+export function beginPasswordReset(db: DB, identifier: string): { token: string; user: User; to: string[] }[] {
+  const out: { token: string; user: User; to: string[] }[] = []
+  db.prepare('DELETE FROM password_resets WHERE expires_at < ?').run(now())
+  for (const user of findResetUsers(db, identifier)) {
+    const to = resetMailAddresses(user)
+    if (to.length === 0) continue
+    const recent = db.prepare('SELECT 1 FROM password_resets WHERE upn = ? AND created_at > ?').get(user.upn, isoAt(Date.now() - RESET_COOLDOWN_MS))
+    if (recent) continue
+    // 不作废旧链接（否则别人反复申请就能让本人手里的链接一直失效）；改密成功时一并清掉
+    const token = crypto.randomBytes(32).toString('base64url')
+    db.prepare('INSERT INTO password_resets(token_hash, upn, created_at, expires_at) VALUES (?,?,?,?)').run(hashResetToken(token), user.upn, now(), isoAt(Date.now() + RESET_TTL_MS))
+    out.push({ token, user, to })
+  }
+  return out
+}
+
+/** 校验重置链接（不消耗），返回对应账号 */
+export function checkResetToken(db: DB, token: string): User {
+  const row = db.prepare('SELECT upn, expires_at FROM password_resets WHERE token_hash = ?').get(hashResetToken(token)) as { upn: string; expires_at: string } | undefined
+  const user = row && row.expires_at >= now() ? getUser(db, row.upn) : undefined
+  if (!user?.password_hash) throw badRequest('重置链接无效或已过期，请重新申请')
+  return user
+}
+
+/** 重置第二步：设新密码（scrypt 哈希），作废该账号所有重置链接和网页会话；agent token 不动 */
+export function completePasswordReset(db: DB, token: string, newPw: string): User {
+  const user = checkResetToken(db, token)
+  checkPassword(newPw)
+  const hash = hashPassword(newPw)
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE upn = ?').run(hash, user.upn)
+    db.prepare('DELETE FROM password_resets WHERE upn = ?').run(user.upn)
+    db.prepare('DELETE FROM sessions WHERE user_upn = ?').run(user.upn)
+  })()
+  return getUser(db, user.upn)!
 }
 
 // ---- 登录失败限速：同一 key（IP 或账号）15 分钟内最多 10 次失败 ----

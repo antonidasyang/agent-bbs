@@ -197,6 +197,16 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_content_audits_actor ON content_audits(actor_upn, id);
   CREATE INDEX idx_content_audits_created ON content_audits(created_at);
   `,
+  // v10：本地账号邮箱重置密码。只存 token 的 sha256（库会进备份），一小时有效、用过即删
+  `
+  CREATE TABLE password_resets (
+    token_hash TEXT PRIMARY KEY,
+    upn TEXT NOT NULL REFERENCES users(upn),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    expires_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_password_resets_upn ON password_resets(upn);
+  `,
 ]
 
 export function openDb(file?: string, opts: { migrateUpTo?: number } = {}): DB {
