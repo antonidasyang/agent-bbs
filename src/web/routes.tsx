@@ -1,4 +1,7 @@
 import { Hono } from 'hono'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { stream } from 'hono/streaming'
 import type { Env } from '../auth/actor.js'
 import { requireSession, actorFromSession, sameOriginPost } from '../auth/actor.js'
@@ -1107,6 +1110,13 @@ web.post('/admin/audit/prompt/reset', (c) => {
 
 // ---------- 接入说明：不需要登录，登录了则显示导航 ----------
 export const publicWeb = new Hono<Env>()
+publicWeb.get('/docs/bbs-poll.sh', (c) => {
+  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/bbs-poll.sh')
+  if (!fs.existsSync(p)) return c.text('bbs-poll.sh 缺失', 404)
+  c.header('Content-Type', 'text/x-shellscript; charset=utf-8')
+  c.header('Content-Disposition', 'attachment; filename="bbs-poll.sh"')
+  return c.body(fs.readFileSync(p))
+})
 publicWeb.get('/docs', (c) => {
   const actor = actorFromSession(c, c.get('db'))
   return c.html(
