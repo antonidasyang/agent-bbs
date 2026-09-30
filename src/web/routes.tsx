@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { stream } from 'hono/streaming'
 import type { Env } from '../auth/actor.js'
 import { requireSession, actorFromSession, sameOriginPost } from '../auth/actor.js'
 import { changeLocalPassword, adminCreateLocalUser } from '../auth/local.js'
@@ -880,15 +881,61 @@ web.post('/tokens/:id/revoke', (c) => {
 function requireAdmin(actor: { isAdmin: boolean }) {
   if (!actor.isAdmin) throw new AppError(403, '只有超管能访问')
 }
+interface AuditRow {
+  id: number
+  kind: string
+  actor_upn: string
+  project_slug: string | null
+  title: string | null
+  excerpt: string
+  body: string | null
+  body_sha256: string
+  verdict: string
+  categories: string
+  reason: string | null
+  model: string | null
+  latency_ms: number | null
+  error: string | null
+  created_at: string
+}
+/** 取证筛选：verdict / actor（handle 或 upn）/ project（slug 子串）/ from / to（日期，含当天） */
+function auditFilter(q: (k: string) => string | undefined): { where: string; params: Record<string, unknown>; f: Record<string, string> } {
+  const f = { verdict: q('verdict') || 'block', actor: (q('actor') || '').trim(), project: (q('project') || '').trim(), from: (q('from') || '').trim(), to: (q('to') || '').trim() }
+  const where: string[] = []
+  const params: Record<string, unknown> = {}
+  if (f.verdict !== 'all') {
+    where.push('verdict = @verdict')
+    params.verdict = f.verdict
+  }
+  if (f.actor) {
+    where.push(f.actor.includes('@') ? 'actor_upn = @actor' : 'actor_upn LIKE @actor')
+    params.actor = f.actor.includes('@') ? f.actor.toLowerCase() : `${f.actor.toLowerCase()}@%`
+  }
+  if (f.project) {
+    where.push('project_slug LIKE @project')
+    params.project = `%${f.project}%`
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(f.from)) {
+    where.push('created_at >= @from')
+    params.from = `${f.from}T00:00:00Z`
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(f.to)) {
+    where.push('created_at <= @to')
+    params.to = `${f.to}T23:59:59Z`
+  }
+  return { where: where.length ? 'WHERE ' + where.join(' AND ') : '', params, f }
+}
+const qs = (f: Record<string, string>) => new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString()
+
 web.get('/admin/audit', (c) => {
   const db = c.get('db')
   const actor = c.get('actor')
   requireAdmin(actor)
   const p = getAuditPrompt(db)
-  const verdict = c.req.query('verdict') || 'block'
-  const rows = db
-    .prepare(`SELECT * FROM content_audits ${verdict === 'all' ? '' : 'WHERE verdict = ?'} ORDER BY id DESC LIMIT 50`)
-    .all(...(verdict === 'all' ? [] : [verdict])) as { id: number; kind: string; actor_upn: string; project_slug: string | null; title: string | null; excerpt: string; verdict: string; categories: string; reason: string | null; latency_ms: number | null; error: string | null; created_at: string }[]
+  const { where, params, f } = auditFilter((k) => c.req.query(k))
+  const verdict = f.verdict
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM content_audits ${where}`).get(params) as { n: number }).n
+  const rows = db.prepare(`SELECT * FROM content_audits ${where} ORDER BY id DESC LIMIT 100`).all(params) as AuditRow[]
   return c.html(
     <Layout title="安全审计" actor={actor} flash={flashOf(c)}>
       <div class="card">
@@ -921,14 +968,26 @@ web.get('/admin/audit', (c) => {
         )}
       </div>
       <div class="card">
-        <h2>审计记录</h2>
+        <h2>审计记录（取证）</h2>
         <p class="tabs small">
-          <a href="/admin/audit?verdict=block" class={verdict === 'block' ? 'on' : ''}>被拦截</a>
-          <a href="/admin/audit?verdict=error" class={verdict === 'error' ? 'on' : ''}>出错</a>
-          <a href="/admin/audit?verdict=allow" class={verdict === 'allow' ? 'on' : ''}>放行</a>
-          <a href="/admin/audit?verdict=all" class={verdict === 'all' ? 'on' : ''}>全部</a>
-          <span class="muted">（最近 50 条）</span>
+          {(['block', 'error', 'allow', 'all'] as const).map((v) => (
+            <a href={`/admin/audit?${qs({ ...f, verdict: v })}`} class={verdict === v ? 'on' : ''}>
+              {{ block: '被拦截', error: '出错', allow: '放行', all: '全部' }[v]}
+            </a>
+          ))}
         </p>
+        <form method="get" action="/admin/audit" class="small" style="margin:8px 0 12px">
+          <input type="hidden" name="verdict" value={verdict} />
+          <input type="text" name="actor" value={f.actor} placeholder="谁：handle 或 upn" style="width:170px;display:inline-block" />{' '}
+          <input type="text" name="project" value={f.project} placeholder="项目 slug 包含" style="width:170px;display:inline-block" />{' '}
+          <input type="text" name="from" value={f.from} placeholder="起 2026-09-01" style="width:130px;display:inline-block" />{' '}
+          <input type="text" name="to" value={f.to} placeholder="止 2026-09-30" style="width:130px;display:inline-block" />{' '}
+          <button type="submit">筛选</button>{' '}
+          <a href="/admin/audit">清空</a>
+          <span class="muted" style="margin-left:12px">
+            共 {total} 条{total > 100 ? '，只显示最近 100 条' : ''}，导出全量（含完整正文）：<a href={`/admin/audit/export?${qs(f)}&format=jsonl`}>JSONL</a> · <a href={`/admin/audit/export?${qs(f)}&format=csv`}>CSV</a>
+          </span>
+        </form>
         <table>
           <thead>
             <tr>
@@ -955,6 +1014,13 @@ web.get('/admin/audit', (c) => {
                 <td class="small" style="max-width:360px">
                   {r.title && <b>{r.title}</b>}
                   <div style="white-space:pre-wrap;word-break:break-all">{r.excerpt}</div>
+                  {r.body && r.body.length > r.excerpt.length && (
+                    <details>
+                      <summary class="muted">全文（{r.body.length} 字）</summary>
+                      <div style="white-space:pre-wrap;word-break:break-all">{r.body}</div>
+                    </details>
+                  )}
+                  {!r.body && <div class="muted">（2026-09-30 之前的记录只有前 500 字）</div>}
                 </td>
                 <td class="muted small">{r.latency_ms != null ? `${r.latency_ms}ms` : ''}</td>
               </tr>
@@ -969,6 +1035,28 @@ web.get('/admin/audit', (c) => {
       </div>
     </Layout>,
   )
+})
+web.get('/admin/audit/export', (c) => {
+  const db = c.get('db')
+  requireAdmin(c.get('actor'))
+  const { where, params, f } = auditFilter((k) => c.req.query(k))
+  const format = c.req.query('format') === 'csv' ? 'csv' : 'jsonl'
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+  c.header('Content-Type', format === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson; charset=utf-8')
+  c.header('Content-Disposition', `attachment; filename="content-audits-${f.verdict}-${stamp}.${format}"`)
+  const cols = ['id', 'created_at', 'kind', 'actor_upn', 'project_slug', 'title', 'verdict', 'categories', 'reason', 'error', 'model', 'latency_ms', 'body_sha256', 'body'] as const
+  const csvCell = (v: unknown) => {
+    const s = v == null ? '' : String(v)
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  return stream(c, async (w) => {
+    if (format === 'csv') await w.write('\ufeff' + cols.join(',') + '\n')
+    for (const r of db.prepare(`SELECT * FROM content_audits ${where} ORDER BY id`).iterate(params) as IterableIterator<AuditRow>) {
+      const row = { ...r, body: r.body ?? r.excerpt, categories: JSON.parse(r.categories || '[]') as string[] }
+      if (format === 'csv') await w.write(cols.map((k) => csvCell(k === 'categories' ? row.categories.join('|') : row[k])).join(',') + '\n')
+      else await w.write(JSON.stringify(Object.fromEntries(cols.map((k) => [k, row[k]]))) + '\n')
+    }
+  })
 })
 web.post('/admin/audit/prompt', async (c) => {
   const actor = c.get('actor')

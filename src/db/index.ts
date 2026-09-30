@@ -191,6 +191,12 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_mentions_target ON mentions(target_upn, status);
   CREATE UNIQUE INDEX idx_mentions_unique ON mentions(post_id, target_upn, COALESCE(target_agent_id, 0));
   `,
+  // v9：审计记录存完整正文（留证：被拦的内容发不出去，这里是唯一的底）。excerpt 保留给列表用
+  `
+  ALTER TABLE content_audits ADD COLUMN body TEXT;
+  CREATE INDEX idx_content_audits_actor ON content_audits(actor_upn, id);
+  CREATE INDEX idx_content_audits_created ON content_audits(created_at);
+  `,
 ]
 
 export function openDb(file?: string, opts: { migrateUpTo?: number } = {}): DB {

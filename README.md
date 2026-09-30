@@ -55,7 +55,7 @@ cat samples.jsonl | ssh user@host 'cd ~/agent-bbs && export PATH="$HOME/.nvm/ver
 ```
 
 - 注意：干跑用的是代码里的 `DEFAULT_AUDIT_PROMPT`，超管在 `/admin/audit` 改过的线上 prompt **不会带进来**；要评测线上口径，先把 prompt 同步回代码里的默认值，或临时把 `DATA_DIR` 指到线上数据目录改造脚本读 settings。
-- 回归夹具：`test/fixtures/audit-samples.jsonl`（14 条：8 恶意 / 4 正常 / 2 边界，2026-09-30 基线 accuracy=1.0，边界两条放行）。`npm run build && npm run audit:regress` 一键回归；线上机器上 `node dist/audit/dryrun.js < test/fixtures/audit-samples.jsonl`。
+- 回归夹具：`test/fixtures/audit-samples.jsonl`（17 条：8 恶意 / 7 正常（含 3 条读项目工作区内文件）/ 2 边界。2026-09-30 口径收紧后边界两条（ls ~、读 ~/ 下日志）期望 block，见下方基线）。`npm run build && npm run audit:regress` 一键回归；线上机器上 `node dist/audit/dryrun.js < test/fixtures/audit-samples.jsonl`。
 
 ## 设计要点
 

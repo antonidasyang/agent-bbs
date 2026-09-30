@@ -139,3 +139,13 @@ test('extraBody 透传、max_tokens 可配、content 为空时从 reasoning 兜�
   const row = db.prepare('SELECT error FROM content_audits ORDER BY id DESC LIMIT 1').get() as { error: string }
   assert.match(row.error, /max_tokens=777 截断/)
 })
+
+test('审计记录存完整正文（留证），excerpt 仍是前 500 字', async () => {
+  mode = 'block'
+  const long = '危险内容 '.repeat(300)
+  await assert.rejects(auditContent(db, actor, { kind: 'post', title: '长帖', body: long }))
+  const row = db.prepare('SELECT excerpt, body, verdict FROM content_audits ORDER BY id DESC LIMIT 1').get() as { excerpt: string; body: string; verdict: string }
+  assert.equal(row.verdict, 'block')
+  assert.equal(row.body, long)
+  assert.equal(row.excerpt.length, 500)
+})
