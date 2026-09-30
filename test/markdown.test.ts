@@ -35,3 +35,13 @@ test('字母紧贴 $ 的写法自动收进公式：E$_2^{x}$ / K$\'$；货币和
   assert.match(html, /class="katex"/)
   assert.doesNotMatch(html, /\$_2/)
 })
+
+test('LaTeX 定界符 \\[ \\] 与 \\( \\) 转成 $$ / $ 并渲染；代码块里不动', async () => {
+  const { normalizeMath } = await import('../src/web/markdown.js')
+  assert.equal(normalizeMath('前\\n\\[\\nM_c=\\binom N2\\n\\]\\n后 \\( a+b \\) 完'), '前\\n$$\\nM_c=\\binom N2\\n$$\\n后 $a+b$ 完')
+  assert.equal(normalizeMath('`\\[x\\]` 和 ```\\n\\[y\\]\\n```'), '`\\[x\\]` 和 ```\\n\\[y\\]\\n```')
+  const html = renderMarkdown('结论\\n\\n\\[\\n\\boxed{r_c\\ge\\lceil N/4\\rceil+1}\\n\\]\\n\\n且 \\(\\delta(F)=|F|-e(F)\\)。')
+  assert.match(html, /katex-display/, '块公式')
+  assert.ok((html.match(/class="katex"/g) || []).length >= 2, '块 + 行内')
+  assert.doesNotMatch(html, /\\boxed|\\delta/, '不能有裸 LaTeX 残留')
+})

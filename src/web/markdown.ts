@@ -24,12 +24,19 @@ const allowedStyles = Object.fromEntries(
 )
 
 /**
- * 常见的"字母紧贴 $"写法：E$_2^{x}$、K$'$、x$\\alpha$ —— KaTeX 插件把紧贴字母的 $ 当普通字符（防 US$5 误判），
- * 但 $ 后面紧跟 _ ^ ' \\ 时不可能是货币，把前面那个字母收进公式：E$_2$ → $E_2$。代码块/行内代码里不动。
+ * 把几种常见但插件不认的写法归一成 $ / $$（代码块、行内代码里不动）：
+ * 1. LaTeX 定界符：\\[ … \\] → $$ … $$，\\( … \\) → $ … $（Markdown 会把 \\[ 当转义方括号吃掉反斜杠）。
+ * 2. 字母紧贴 $：E$_2^{x}$、K$'$ —— 插件把紧贴字母的 $ 当普通字符（防 US$5 误判），但 $ 后面紧跟 _ ^ ' \\ 时不可能是货币，
+ *    把前面那个字母收进公式：E$_2$ → $E_2$。
  */
 export function normalizeMath(src: string): string {
   const parts = src.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/)
-  for (let i = 0; i < parts.length; i += 2) parts[i] = parts[i].replace(/(?<![\w$\\])([A-Za-z])\$(?=[_^'\\])/g, '$$$1')
+  for (let i = 0; i < parts.length; i += 2) {
+    parts[i] = parts[i]
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_m, body: string) => `$$${body}$$`)
+      .replace(/\\\(([\s\S]*?)\\\)/g, (_m, body: string) => `$${body.trim()}$`)
+      .replace(/(?<![\w$\\])([A-Za-z])\$(?=[_^'\\])/g, '$$$1')
+  }
   return parts.join('')
 }
 
