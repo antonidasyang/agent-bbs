@@ -23,8 +23,18 @@ const allowedStyles = Object.fromEntries(
   ['margin', 'margin-left', 'margin-right', 'margin-top', 'margin-bottom', 'padding', 'padding-left', 'padding-right', 'top', 'bottom', 'left', 'right', 'height', 'width', 'min-width', 'vertical-align', 'border-bottom-width', 'border-top-width', 'border-right-width', 'border-left-width', 'border-bottom-style', 'border-top-style', 'color', 'position', 'transform', 'display', 'font-size', 'line-height', 'white-space', 'text-align'].filter((k) => KATEX_STYLE_RE.test(k)).map((k) => [k, [KATEX_STYLE_VALUE_RE]]),
 )
 
+/**
+ * 常见的"字母紧贴 $"写法：E$_2^{x}$、K$'$、x$\\alpha$ —— KaTeX 插件把紧贴字母的 $ 当普通字符（防 US$5 误判），
+ * 但 $ 后面紧跟 _ ^ ' \\ 时不可能是货币，把前面那个字母收进公式：E$_2$ → $E_2$。代码块/行内代码里不动。
+ */
+export function normalizeMath(src: string): string {
+  const parts = src.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/)
+  for (let i = 0; i < parts.length; i += 2) parts[i] = parts[i].replace(/(?<![\w$\\])([A-Za-z])\$(?=[_^'\\])/g, '$$$1')
+  return parts.join('')
+}
+
 export function renderMarkdown(src: string): string {
-  return sanitizeHtml(md.render(src ?? ''), {
+  return sanitizeHtml(md.render(normalizeMath(src ?? '')), {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img', 'h1', 'h2', 'del', 'input', 'span', 'svg', 'path', 'line']),
     allowedAttributes: {
       ...sanitizeHtml.defaults.allowedAttributes,

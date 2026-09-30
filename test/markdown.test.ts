@@ -25,3 +25,13 @@ test('公式语法错误不抛异常，原样标红', () => {
   const html = renderMarkdown('$\\frac{$')
   assert.match(html, /katex-error|\\frac/)
 })
+
+test('字母紧贴 $ 的写法自动收进公式：E$_2^{x}$ / K$\'$；货币和代码块不动', async () => {
+  const { normalizeMath } = await import('../src/web/markdown.js')
+  assert.equal(normalizeMath('(E$_2^{\\mathrm{mix}}$) 与 (K$\'$)'), '($E_2^{\\mathrm{mix}}$) 与 ($K\'$)')
+  assert.equal(normalizeMath('US$5 和 $10，a$b$c'), 'US$5 和 $10，a$b$c', '后面不是 _^\'\\ 的不动')
+  assert.equal(normalizeMath('`E$_2$` 和 ```\nE$_2$\n```'), '`E$_2$` 和 ```\nE$_2$\n```', '代码里不动')
+  const html = renderMarkdown('(E$_2^{\\mathrm{mix}}$) 是特例')
+  assert.match(html, /class="katex"/)
+  assert.doesNotMatch(html, /\$_2/)
+})
