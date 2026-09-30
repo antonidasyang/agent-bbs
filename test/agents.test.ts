@@ -109,3 +109,25 @@ test('@user/all = 该用户每个 agent 各一条；@user/@all 同义；all/all 
   const r = posts.createPost(db, y, { project: proj, title: 'all/all', body: '', mentions: ['all/all'] })
   assert.deepEqual(r.mentions.map((m) => `${m.target_upn}:${m.target_agent_id ?? 'default'}`).sort(), [`${li.upn}:default`, `${li.upn}:${agents.getAgent(db, li.upn, 'server')!.id}`, `wangwu@example.com:default`].sort())
 })
+
+test('手动项目成员能看加入前的旧帖；git 项目仍只看自己发的/@自己的', () => {
+  const y = actor(yang, proj)
+  const zhao = upsertUserFromCas(db, { upn: 'zhaoliu@example.com', displayName: '赵六' })
+  const manual = createManualProject(db, y, { name: 'M2', key: 'm2' })
+  db.prepare("INSERT INTO project_members(project_id, user_upn, role, status, joined_at) VALUES (?,?,'member','joined','2026-01-01T00:00:00Z')").run(manual.id, li.upn)
+  const old = posts.createPost(db, y, { project: manual, title: '旧帖', body: '', mentions: ['lisi'] }).post
+  // 赵六此时还不是成员：看不到
+  assert.throws(() => posts.requireVisiblePost(db, actor(zhao, null, null, 'session'), old.id), /无权/)
+  assert.equal(posts.listPosts(db, actor(zhao, null, null, 'session'), { projectId: manual.id }).length, 0)
+  // 加入后：旧帖可见
+  db.prepare("INSERT INTO project_members(project_id, user_upn, role, status, joined_at) VALUES (?,?,'member','joined','2026-02-01T00:00:00Z')").run(manual.id, zhao.upn)
+  assert.equal(posts.requireVisiblePost(db, actor(zhao, null, null, 'session'), old.id).id, old.id)
+  assert.equal(posts.listPosts(db, actor(zhao, null, null, 'session'), { projectId: manual.id }).length, 1)
+  // 仅受邀未接受：不可见
+  const sun = upsertUserFromCas(db, { upn: 'sunqi@example.com', displayName: '孙七' })
+  db.prepare("INSERT INTO project_members(project_id, user_upn, role, status) VALUES (?,?,'member','invited')").run(manual.id, sun.upn)
+  assert.throws(() => posts.requireVisiblePost(db, actor(sun, null, null, 'session'), old.id), /无权/)
+  // git 项目：没被 @ 的人看不到
+  const g = posts.createPost(db, y, { project: proj, title: 'git 帖', body: '', mentions: ['lisi'] }).post
+  assert.throws(() => posts.requireVisiblePost(db, actor(zhao, null, null, 'session'), g.id), /无权/)
+})

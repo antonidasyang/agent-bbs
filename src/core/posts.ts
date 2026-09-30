@@ -51,11 +51,16 @@ export function getAttachment(db: DB, id: number): Attachment | undefined {
 }
 
 // ---------- 可见性 ----------
+/** 可见：超管 / 自己发的 / @ 自己的 / 手动项目的已加入成员看该项目全部（含加入前的旧帖，2026-09-30 放开） */
 export function canSeePost(db: DB, actor: Actor, post: Post): boolean {
   if (actor.isAdmin) return true
   if (post.author_upn === actor.user.upn) return true
   const m = db.prepare('SELECT 1 FROM mentions WHERE post_id = ? AND target_upn = ?').get(post.id, actor.user.upn)
-  return !!m
+  if (m) return true
+  const member = db
+    .prepare(`SELECT 1 FROM projects pr JOIN project_members pm ON pm.project_id = pr.id WHERE pr.id = ? AND pr.kind = 'manual' AND pm.user_upn = ? AND pm.status = 'joined'`)
+    .get(post.project_id, actor.user.upn)
+  return !!member
 }
 export function requireVisiblePost(db: DB, actor: Actor, id: number): Post {
   const post = getPost(db, id)
@@ -64,7 +69,8 @@ export function requireVisiblePost(db: DB, actor: Actor, id: number): Post {
 }
 
 /** SQL 片段：帖子对 actor 可见。参数名 @upn */
-const VISIBLE_SQL = `(p.author_upn = @upn OR EXISTS (SELECT 1 FROM mentions mv WHERE mv.post_id = p.id AND mv.target_upn = @upn))`
+const VISIBLE_SQL = `(p.author_upn = @upn OR EXISTS (SELECT 1 FROM mentions mv WHERE mv.post_id = p.id AND mv.target_upn = @upn)
+  OR EXISTS (SELECT 1 FROM projects pv JOIN project_members pmv ON pmv.project_id = pv.id WHERE pv.id = p.project_id AND pv.kind = 'manual' AND pmv.user_upn = @upn AND pmv.status = 'joined'))`
 
 export interface PostSummary extends Post {
   author_name: string
