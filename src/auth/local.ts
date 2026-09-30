@@ -9,6 +9,8 @@ import type { User } from '../core/types.js'
 
 const SCRYPT_N = 16384
 const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{1,31}$/
+// @all 是群发关键字，其余是容易混淆或将来可能当关键字的
+export const RESERVED_USERNAMES = new Set(['all', 'everyone', 'here', 'admin', 'administrator', 'root', 'system', 'bbs', 'agent-bbs', 'default', 'null', 'undefined', 'me'])
 
 export function hashPassword(pw: string): string {
   const salt = crypto.randomBytes(16).toString('base64url')
@@ -33,6 +35,7 @@ function checkPassword(pw: string) {
 export function normalizeUsername(raw: string): string {
   const u = raw.trim().toLowerCase().replace(/@.*$/, '')
   if (!USERNAME_RE.test(u)) throw badRequest('账号只能是 2-32 位小写字母、数字、. _ -，且以字母或数字开头')
+  if (RESERVED_USERNAMES.has(u)) throw badRequest(`「${u}」是保留字，不能用作账号`)
   return u
 }
 

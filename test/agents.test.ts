@@ -94,3 +94,7 @@ test('@all：git 项目 = 登录过的所有人（不含自己）；手动项目
   assert.equal(posts.addMentions(db, y, r3.post.id, ['all']).length, 1)
   assert.equal(posts.getPostSummary(db, r3.post.id)!.mentions.length, 1)
 })
+
+test('agent id 保留字：all 不能建', () => {
+  assert.throws(() => agents.createAgent(db, li.upn, { agentId: 'all' }), /保留字/)
+})

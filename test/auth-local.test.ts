@@ -80,3 +80,9 @@ test('图形验证码：对/错/重放/过期', async () => {
   assert.throws(() => checkCaptcha(t2, a2), /已使用/, '重放')
   assert.throws(() => checkCaptcha('garbage', 'X'), /已过期/)
 })
+
+test('保留字不能注册：all / admin 等', () => {
+  const db = openDb(':memory:')
+  for (const name of ['all', 'ALL', 'everyone', 'admin', 'default']) assert.throws(() => registerLocalUser(db, { username: name, displayName: '', password: 'password1' }), /保留字/, name)
+  assert.throws(() => localAuth.beginSignup(db, { username: 'all', displayName: '', email: 'a@b.co', password: 'password1' }), /保留字/)
+})

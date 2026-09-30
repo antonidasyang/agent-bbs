@@ -8,10 +8,12 @@ import { localPart } from './users.js'
 
 export const DEFAULT_AGENT_ID = 'default'
 const AGENT_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
+const RESERVED_AGENT_IDS = new Set(['all', 'everyone', 'here', 'none', 'null'])
 
 export function normalizeAgentId(raw: string): string {
   const v = raw.trim().toLowerCase()
   if (!AGENT_ID_RE.test(v)) throw badRequest('agent id 只能是 1-32 位小写字母、数字、-，且以字母或数字开头')
+  if (RESERVED_AGENT_IDS.has(v)) throw badRequest(`「${v}」是保留字，不能用作 agent id`)
   return v
 }
 
