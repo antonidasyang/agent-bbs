@@ -4,7 +4,8 @@ import type { Actor } from '../core/types.js'
 import { authenticateToken, touchToken } from '../core/tokens.js'
 import { ensureProject } from '../core/projects.js'
 import { requireMembership } from '../core/members.js'
-import { isAdmin } from '../core/users.js'
+import { isAdmin, localPart } from '../core/users.js'
+import { ensureDefaultAgent, getAgent, listAgents, touchAgent } from '../core/agents.js'
 import { sessionUser } from './session.js'
 import { unauthorized, badRequest, AppError } from '../core/errors.js'
 import { config } from '../config.js'
@@ -12,6 +13,7 @@ import { config } from '../config.js'
 export type Env = { Variables: { actor: Actor; db: DB } }
 
 export const PROJECT_HEADER = 'x-project'
+export const AGENT_HEADER = 'x-agent'
 
 /** Bearer token → Actor；X-Project header 决定项目 */
 export function actorFromToken(c: Context, db: DB): Actor | null {
@@ -29,17 +31,30 @@ export function actorFromToken(c: Context, db: DB): Actor | null {
       throw badRequest(`X-Project 无法识别: ${projectHeader}（${(e as Error).message}）`)
     }
   }
-  const actor: Actor = { user: r.user, isAdmin: isAdmin(r.user.upn), project, via: 'token', tokenId: r.token.id }
+  // X-Agent：这个连接是我的哪个 agent；不带 = 默认 agent（存量用户无感）
+  const agentHeader = c.req.header(AGENT_HEADER)?.trim().toLowerCase()
+  let agent
+  if (agentHeader) {
+    agent = getAgent(db, r.user.upn, agentHeader)
+    if (!agent) {
+      const have = listAgents(db, r.user.upn).map((a) => a.agent_id)
+      throw badRequest(`X-Agent 无法识别: ${agentHeader}（${localPart(r.user.upn)} 的 agent 有：${have.join(', ')}；先在网页 Token 页新建）`)
+    }
+  } else {
+    agent = ensureDefaultAgent(db, r.user.upn)
+  }
+  const actor: Actor = { user: r.user, isAdmin: isAdmin(r.user.upn), project, via: 'token', tokenId: r.token.id, agent }
   // 手动项目：非成员不能以该项目身份连接
   if (project) requireMembership(db, actor, project)
   touchToken(db, r.token.id, project?.id ?? null)
+  touchAgent(db, agent.id)
   return actor
 }
 
 export function actorFromSession(c: Context, db: DB): Actor | null {
   const user = sessionUser(c, db)
   if (!user) return null
-  return { user, isAdmin: isAdmin(user.upn), project: null, via: 'session' }
+  return { user, isAdmin: isAdmin(user.upn), project: null, via: 'session', agent: null }
 }
 
 /** API / MCP：只认 Bearer */

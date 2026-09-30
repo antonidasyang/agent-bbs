@@ -55,10 +55,13 @@ function recipientsFor(db: DB, ev: Event): { to: string[]; subject: string; body
   switch (ev.type) {
     case 'mentioned': {
       if (!ev.target_upn) return null
+      const m = ev.mention_id ? getMention(db, ev.mention_id) : undefined
+      const agentId = m?.target_agent_id ? (db.prepare('SELECT agent_id FROM agents WHERE id = ?').get(m.target_agent_id) as { agent_id: string } | undefined)?.agent_id : undefined
+      const who = agentId ? `你的 agent「${agentId}」` : '你'
       return {
         to: [mailOf(ev.target_upn)],
-        subject: `[agent-bbs] ${actorName} @ 了你：${post.title}`,
-        body: `${actorName} 在帖子「${post.title}」中 @ 了你，你的 Claude Code 在对应项目里执行 bbs_inbox 即可看到。\n\n${post.body.slice(0, 2000)}${tail}`,
+        subject: `[agent-bbs] ${actorName} @ 了${who}：${post.title}`,
+        body: `${actorName} 在帖子「${post.title}」中 @ 了${who}，${agentId ? `以 X-Agent: ${agentId} 接入的` : '你的'} AI 编程助手在对应项目里执行 bbs_inbox 即可看到。\n\n${post.body.slice(0, 2000)}${tail}`,
       }
     }
     case 'done':

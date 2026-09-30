@@ -1,7 +1,7 @@
 import type { DB } from '../db/index.js'
 import { now } from '../db/index.js'
 import { config } from '../config.js'
-import type { User } from './types.js'
+import type { User, Agent } from './types.js'
 import { badRequest } from './errors.js'
 
 export function getUser(db: DB, upn: string): User | undefined {
@@ -33,16 +33,29 @@ export function localPart(upn: string): string {
   return upn.split('@')[0]
 }
 
+export interface MentionTarget {
+  user: User
+  /** 指名的 agent；null = 默认 agent（@user 或 @user/<当前默认>） */
+  agent: Agent | null
+}
+
 /**
- * 解析 @ 目标："@alice" / "alice" / "alice@example.com" / "@艾丽丝"。
+ * 解析 @ 目标："@alice" / "alice" / "alice@example.com" / "@艾丽丝"，可带 "/agentid" 指名某个 agent。
  * 全部解析成功才返回；任一失败抛 400 并列出原因。
  */
-export function resolveMentions(db: DB, inputs: string[]): User[] {
-  const out = new Map<string, User>()
+export function resolveMentionTargets(db: DB, inputs: string[]): MentionTarget[] {
+  const out = new Map<string, MentionTarget>()
   const errors: string[] = []
   for (const rawIn of inputs) {
-    const raw = rawIn.trim().replace(/^@/, '')
-    if (!raw) continue
+    const whole = rawIn.trim().replace(/^@/, '')
+    if (!whole) continue
+    const slash = whole.indexOf('/')
+    const raw = slash >= 0 ? whole.slice(0, slash).trim() : whole
+    const agentPart = slash >= 0 ? whole.slice(slash + 1).trim().toLowerCase() : null
+    if (slash >= 0 && !agentPart) {
+      errors.push(`"${whole}" 斜杠后面要跟 agent id`)
+      continue
+    }
     let user: User | undefined
     if (raw.includes('@')) {
       user = getUser(db, raw)
@@ -61,10 +74,28 @@ export function resolveMentions(db: DB, inputs: string[]): User[] {
       errors.push(`"${raw}" 不存在（对方需要先登录过 BBS）`)
       continue
     }
-    out.set(user.upn, user)
+    let agent: Agent | null = null
+    if (agentPart) {
+      const a = db.prepare('SELECT * FROM agents WHERE user_upn = ? AND agent_id = ?').get(user.upn, agentPart) as Agent | undefined
+      if (!a) {
+        const have = (db.prepare('SELECT agent_id FROM agents WHERE user_upn = ? ORDER BY is_default DESC, agent_id').all(user.upn) as { agent_id: string }[]).map((x) => x.agent_id)
+        errors.push(`"${whole}"：${localPart(user.upn)} 没有名为 ${agentPart} 的 agent${have.length ? `（可用：${have.join(', ')}）` : `（对方还没建过 agent，直接 @${localPart(user.upn)} 即可）`}`)
+        continue
+      }
+      // 指名的正好是默认 agent → 等价于不指名，存 NULL，默认 agent 换了任务跟着走
+      agent = a.is_default ? null : a
+    }
+    out.set(`${user.upn}/${agent?.id ?? 0}`, { user, agent })
   }
   if (errors.length) throw badRequest(`@ 解析失败：${errors.join('；')}`)
   return [...out.values()]
+}
+
+/** 只要人（去重），给邀请等不关心 agent 的地方用 */
+export function resolveMentions(db: DB, inputs: string[]): User[] {
+  const seen = new Map<string, User>()
+  for (const t of resolveMentionTargets(db, inputs)) seen.set(t.user.upn, t.user)
+  return [...seen.values()]
 }
 
 /** 通知邮件收件地址：自定义 → CAS mail → UPN */

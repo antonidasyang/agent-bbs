@@ -4,6 +4,7 @@ import { requireSession, actorFromSession, sameOriginPost } from '../auth/actor.
 import { changeLocalPassword, adminCreateLocalUser } from '../auth/local.js'
 import { auditContent, auditDescription, getAuditPrompt, AUDIT_PROMPT_KEY, DEFAULT_AUDIT_PROMPT } from '../audit/index.js'
 import { setSetting, deleteSetting } from '../core/settings.js'
+import { listAgents, createAgent, setDefaultAgent, deleteAgent, mentionHandle } from '../core/agents.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
@@ -289,7 +290,8 @@ web.get('/p/:id', (c) => {
                   <td>
                     {p.mentions.map((m) => (
                       <span style="margin-right:6px">
-                        {m.target_name} <StatusBadge status={m.status} />
+                        {m.target_name}
+                        {m.target_agent && <span class="muted small">/{m.target_agent}</span>} <StatusBadge status={m.status} />
                       </span>
                     ))}
                   </td>
@@ -465,7 +467,8 @@ web.get('/posts/new', (c) => {
           <label>标题</label>
           <input type="text" name="title" required maxlength={200} />
           <label>@ 谁（账号或姓名，多个用空格/逗号分开）</label>
-          <input type="text" name="mentions" required placeholder="alice, 张三" />
+          <input type="text" name="mentions" required placeholder="alice, 张三, alice/desktop" />
+          <p class="muted small">@账号 发给对方的默认 agent；@账号/agentid 指名对方的某个 agent（对方在 Token 页建的）。</p>
           <label>正文（Markdown）</label>
           <textarea name="body" placeholder="背景 / 要改什么 / 验收标准"></textarea>
           <p>
@@ -533,8 +536,8 @@ web.get('/posts/:id', (c) => {
             {m.note && m.status !== 'done' && <span class="muted small">（{m.note}）</span>}
             {m.done_at && <span class="muted small">完成于 {fmt(m.done_at)}</span>}
             <span class="actions">
-              {m.target === me && m.status === 'pending' && act(m.mention_id, 'claim', '认领')}
-              {(m.target === me || canManage) && (m.status === 'pending' || m.status === 'in_progress') && act(m.mention_id, 'done', '标记完成', 'primary')}
+              {m.target_handle === me && m.status === 'pending' && act(m.mention_id, 'claim', '认领')}
+              {(m.target_handle === me || canManage) && (m.status === 'pending' || m.status === 'in_progress') && act(m.mention_id, 'done', '标记完成', 'primary')}
               {canManage && m.status !== 'disabled' && m.status !== 'done' && act(m.mention_id, 'disable', '禁用', 'danger')}
               {canManage && (m.status === 'done' || m.status === 'disabled') && act(m.mention_id, 'reopen', '重开')}
             </span>
@@ -707,6 +710,53 @@ web.get('/tokens', (c) => {
         </div>
       )}
       <div class="card">
+        <h2>我的 agent</h2>
+        <p class="muted small">
+          一个人可以有多个 agent（多台机器 / 多个实例）。别人 <code>@{localPart(actor.user.upn)}</code> 发给默认 agent；<code>@{localPart(actor.user.upn)}/&lt;id&gt;</code> 指名某个 agent。
+          接入时加 <code>--header "X-Agent: &lt;id&gt;"</code> 表明身份，不加就是默认 agent。
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>备注</th>
+              <th>@ 写法</th>
+              <th>最近连接</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {listAgents(db, actor.user.upn).map((a) => (
+              <tr>
+                <td>
+                  <code>{a.agent_id}</code> {a.is_default ? <span class="badge done">默认</span> : null}
+                </td>
+                <td>{a.name}</td>
+                <td class="muted">@{mentionHandle(actor.user.upn, a.is_default ? null : a.agent_id)}</td>
+                <td class="muted">{fmt(a.last_seen_at) || '-'}</td>
+                <td>
+                  {!a.is_default && (
+                    <>
+                      <form class="inline" method="post" action={`/agents/${a.id}/default`}>
+                        <button type="submit">设为默认</button>
+                      </form>{' '}
+                      <form class="inline" method="post" action={`/agents/${a.id}/delete`}>
+                        <button class="danger" type="submit">删除</button>
+                      </form>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <form method="post" action="/agents" style="margin-top:10px">
+          <input type="text" name="agent_id" placeholder="id，如 desktop / mac / server" style="width:220px;display:inline-block" />{' '}
+          <input type="text" name="name" placeholder="备注（可选）" style="width:220px;display:inline-block" />{' '}
+          <button type="submit">新建 agent</button>
+        </form>
+      </div>
+      <div class="card">
         <h2>创建 Token</h2>
         <form method="post" action="/tokens">
           <input type="text" name="name" placeholder="备注，例如：MacBook / 工作站" style="width:300px;display:inline-block" /> <button class="primary" type="submit">
@@ -764,6 +814,34 @@ web.post('/settings/notify-email', async (c) => {
     throw e
   }
   return redirectFlash(c, '/tokens', '通知邮箱已保存')
+})
+web.post('/agents', async (c) => {
+  const f = await c.req.parseBody()
+  try {
+    const a = createAgent(c.get('db'), c.get('actor').user.upn, { agentId: String(f['agent_id'] ?? ''), name: String(f['name'] ?? '') })
+    return redirectFlash(c, '/tokens', `已新建 agent ${a.agent_id}，接入时加 --header "X-Agent: ${a.agent_id}"`)
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/tokens', e.message)
+    throw e
+  }
+})
+web.post('/agents/:id/default', (c) => {
+  try {
+    const a = setDefaultAgent(c.get('db'), c.get('actor').user.upn, idParam(c.req.param('id')))
+    return redirectFlash(c, '/tokens', `默认 agent 改为 ${a.agent_id}，之后 @${localPart(c.get('actor').user.upn)} 的任务都到它那里`)
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/tokens', e.message)
+    throw e
+  }
+})
+web.post('/agents/:id/delete', (c) => {
+  try {
+    deleteAgent(c.get('db'), c.get('actor').user.upn, idParam(c.req.param('id')))
+    return redirectFlash(c, '/tokens', '已删除，指名给它的任务改由默认 agent 接')
+  } catch (e) {
+    if (e instanceof AppError) return redirectFlash(c, '/tokens', e.message)
+    throw e
+  }
 })
 web.post('/settings/password', async (c) => {
   if (config.authMode !== 'local') throw badRequest('CAS 登录模式下没有本地密码')

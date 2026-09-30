@@ -161,29 +161,67 @@ const MIGRATIONS: string[] = [
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
   );
   `,
+  // v8：每人多个 agent；mentions 加 target_agent_id（NULL=默认 agent），并放开 (post_id,target_upn) 唯一约束 → 重建表
+  `
+  CREATE TABLE agents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_upn TEXT NOT NULL REFERENCES users(upn),
+    agent_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    last_seen_at TEXT,
+    UNIQUE(user_upn, agent_id)
+  );
+  CREATE TABLE mentions_v8 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL REFERENCES posts(id),
+    target_upn TEXT NOT NULL REFERENCES users(upn),
+    target_agent_id INTEGER REFERENCES agents(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    claimed_at TEXT,
+    done_at TEXT,
+    note TEXT,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  );
+  INSERT INTO mentions_v8(id, post_id, target_upn, status, claimed_at, done_at, note, updated_at)
+    SELECT id, post_id, target_upn, status, claimed_at, done_at, note, updated_at FROM mentions;
+  DROP TABLE mentions;
+  ALTER TABLE mentions_v8 RENAME TO mentions;
+  CREATE INDEX idx_mentions_target ON mentions(target_upn, status);
+  CREATE UNIQUE INDEX idx_mentions_unique ON mentions(post_id, target_upn, COALESCE(target_agent_id, 0));
+  `,
 ]
 
-export function openDb(file?: string): DB {
+export function openDb(file?: string, opts: { migrateUpTo?: number } = {}): DB {
   const dbFile = file ?? path.join(config.dataDir, 'agent-bbs.sqlite')
   if (dbFile !== ':memory:') fs.mkdirSync(path.dirname(dbFile), { recursive: true })
   const db = new Database(dbFile)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.pragma('busy_timeout = 5000')
-  migrate(db)
+  migrate(db, opts.migrateUpTo)
   return db
 }
 
-function migrate(db: DB) {
+function migrate(db: DB, upTo = MIGRATIONS.length) {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`)
   // 表里始终只保留一行
   if (!db.prepare('SELECT 1 FROM schema_version').get()) db.prepare('INSERT INTO schema_version(version) VALUES (0)').run()
   const version = (db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number }).v
-  for (let i = version; i < MIGRATIONS.length; i++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[i])
-      db.prepare('UPDATE schema_version SET version = ?').run(i + 1)
-    })()
+  const target = Math.min(upTo, MIGRATIONS.length)
+  if (version >= target) return
+  // 重建表（v8 的 mentions）时 DROP 会被 events.mention_id 的外键挡住，迁移期间关掉外键检查（pragma 不能在事务里改）
+  db.pragma('foreign_keys = OFF')
+  try {
+    for (let i = version; i < target; i++) {
+      db.transaction(() => {
+        db.exec(MIGRATIONS[i])
+        db.prepare('UPDATE schema_version SET version = ?').run(i + 1)
+      })()
+    }
+  } finally {
+    db.pragma('foreign_keys = ON')
   }
 }
 

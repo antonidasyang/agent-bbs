@@ -2,7 +2,7 @@ import type { DB } from '../db/index.js'
 import { now } from '../db/index.js'
 import type { Actor, Attachment, Event, EventType, Mention, MentionStatus, Post, Project, Reply, User } from './types.js'
 import { badRequest, forbidden, notFound } from './errors.js'
-import { resolveMentions } from './users.js'
+import { resolveMentionTargets } from './users.js'
 import { requireMembership, requireTargetsAreMembers } from './members.js'
 import { getProject } from './projects.js'
 
@@ -72,12 +72,12 @@ export interface PostSummary extends Post {
   project_name: string
   source_project_slug: string | null
   reply_count: number
-  mentions: { id: number; target_upn: string; target_name: string; status: MentionStatus }[]
+  mentions: { id: number; target_upn: string; target_name: string; target_agent: string | null; status: MentionStatus }[]
 }
 
 function attachSummaries(db: DB, posts: (Post & Record<string, unknown>)[]): PostSummary[] {
   const mentionStmt = db.prepare(
-    `SELECT m.id, m.target_upn, u.display_name AS target_name, m.status FROM mentions m JOIN users u ON u.upn = m.target_upn WHERE m.post_id = ? ORDER BY m.id`,
+    `SELECT m.id, m.target_upn, u.display_name AS target_name, a.agent_id AS target_agent, m.status FROM mentions m JOIN users u ON u.upn = m.target_upn LEFT JOIN agents a ON a.id = m.target_agent_id WHERE m.post_id = ? ORDER BY m.id`,
   )
   return posts.map((p) => ({ ...(p as unknown as PostSummary), mentions: mentionStmt.all(p.id) as PostSummary['mentions'] }))
 }
@@ -126,11 +126,11 @@ export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post
   const title = input.title.trim()
   if (!title) throw badRequest('标题不能为空')
   if (title.length > 200) throw badRequest('标题过长')
-  const targets = resolveMentions(db, input.mentions)
+  const targets = resolveMentionTargets(db, input.mentions)
   if (targets.length === 0) throw badRequest('至少要 @ 一个人')
   // 手动项目：发帖人和被 @ 的人都必须是成员
   requireMembership(db, actor, input.project)
-  requireTargetsAreMembers(db, input.project, targets)
+  requireTargetsAreMembers(db, input.project, targets.map((t) => t.user))
   const result = db.transaction(() => {
     const r = db
       .prepare('INSERT INTO posts(project_id, author_upn, source_project_id, title, body) VALUES (?,?,?,?,?)')
@@ -138,10 +138,10 @@ export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post
     const post = getPost(db, Number(r.lastInsertRowid))!
     const mentions: Mention[] = []
     for (const t of targets) {
-      const mr = db.prepare('INSERT INTO mentions(post_id, target_upn) VALUES (?,?)').run(post.id, t.upn)
+      const mr = db.prepare('INSERT INTO mentions(post_id, target_upn, target_agent_id) VALUES (?,?,?)').run(post.id, t.user.upn, t.agent?.id ?? null)
       const m = getMention(db, Number(mr.lastInsertRowid))!
       mentions.push(m)
-      emit(db, { post_id: post.id, mention_id: m.id, reply_id: null, type: 'mentioned', actor_upn: actor.user.upn, target_upn: t.upn })
+      emit(db, { post_id: post.id, mention_id: m.id, reply_id: null, type: 'mentioned', actor_upn: actor.user.upn, target_upn: t.user.upn })
     }
     return { post, mentions }
   })()
@@ -152,20 +152,21 @@ export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post
 export function addMentions(db: DB, actor: Actor, postId: number, inputs: string[]): Mention[] {
   const post = requireVisiblePost(db, actor, postId)
   if (post.author_upn !== actor.user.upn && !actor.isAdmin) throw forbidden('只有发帖人可以追加 @')
-  const targets = resolveMentions(db, inputs)
-  requireTargetsAreMembers(db, getProject(db, post.project_id)!, targets)
+  const targets = resolveMentionTargets(db, inputs)
+  requireTargetsAreMembers(db, getProject(db, post.project_id)!, targets.map((t) => t.user))
   return db.transaction(() => {
     const out: Mention[] = []
     for (const t of targets) {
-      const exists = db.prepare('SELECT * FROM mentions WHERE post_id = ? AND target_upn = ?').get(post.id, t.upn) as Mention | undefined
+      const agentId = t.agent?.id ?? null
+      const exists = db.prepare('SELECT * FROM mentions WHERE post_id = ? AND target_upn = ? AND COALESCE(target_agent_id, 0) = COALESCE(?, 0)').get(post.id, t.user.upn, agentId) as Mention | undefined
       if (exists) {
         out.push(exists)
         continue
       }
-      const mr = db.prepare('INSERT INTO mentions(post_id, target_upn) VALUES (?,?)').run(post.id, t.upn)
+      const mr = db.prepare('INSERT INTO mentions(post_id, target_upn, target_agent_id) VALUES (?,?,?)').run(post.id, t.user.upn, agentId)
       const m = getMention(db, Number(mr.lastInsertRowid))!
       out.push(m)
-      emit(db, { post_id: post.id, mention_id: m.id, reply_id: null, type: 'mentioned', actor_upn: actor.user.upn, target_upn: t.upn })
+      emit(db, { post_id: post.id, mention_id: m.id, reply_id: null, type: 'mentioned', actor_upn: actor.user.upn, target_upn: t.user.upn })
     }
     db.prepare('UPDATE posts SET updated_at = ? WHERE id = ?').run(now(), post.id)
     return out
@@ -307,18 +308,21 @@ export interface Inbox {
 
 /**
  * tasks：@我的、落在当前项目版块的任务（status 过滤）。
+ *   token 连接还按 agent 过滤：指名给这个 agent 的 + （我是默认 agent 时）没指名的；人类会话看自己所有 agent 的。
  * updates：别人对"我发的（来源=当前项目）或 @我的（版块=当前项目）"帖子做的动作，since 之后的。
  * 没有绑定项目（人类会话 / 无 X-Project 的 token）时跨所有项目。
  */
 export function getInbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'open' | 'all'; since?: number; limit?: number } = {}): Inbox {
   const status = opts.status ?? 'open'
   const projectId = actor.project?.id ?? null
-  const params: Record<string, unknown> = { upn: actor.user.upn, projectId, since: opts.since ?? 0, limit: opts.limit ?? 50 }
+  const agent = actor.agent ?? null
+  const params: Record<string, unknown> = { upn: actor.user.upn, projectId, since: opts.since ?? 0, limit: opts.limit ?? 50, agentId: agent?.id ?? null, agentIsDefault: agent?.is_default ? 1 : 0 }
   const statusSql = status === 'pending' ? `m.status = 'pending'` : status === 'open' ? `m.status IN ('pending','in_progress')` : '1=1'
+  const agentSql = `(@agentId IS NULL OR m.target_agent_id = @agentId OR (m.target_agent_id IS NULL AND @agentIsDefault = 1))`
   const taskRows = db
     .prepare(
       `SELECT m.id AS mention_id, m.status, m.post_id FROM mentions m JOIN posts p ON p.id = m.post_id
-       WHERE m.target_upn = @upn AND ${statusSql} AND (@projectId IS NULL OR p.project_id = @projectId)
+       WHERE m.target_upn = @upn AND ${statusSql} AND (@projectId IS NULL OR p.project_id = @projectId) AND ${agentSql}
        ORDER BY m.id DESC LIMIT @limit`,
     )
     .all(params) as { mention_id: number; status: MentionStatus; post_id: number }[]

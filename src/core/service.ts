@@ -11,11 +11,14 @@ import { badRequest, forbidden } from './errors.js'
 import { config } from '../config.js'
 import { makeObjectKey, storageEnabled, putObject, sha256 } from '../storage/index.js'
 import { auditContent } from '../audit/index.js'
+import { listAgents, mentionHandle } from './agents.js'
 
 export function whoami(db: DB, actor: Actor) {
   return {
     user: { upn: actor.user.upn, handle: localPart(actor.user.upn), display_name: actor.user.display_name, is_admin: actor.isAdmin },
     project: actor.project ? { slug: actor.project.slug, name: actor.project.name, url: actor.project.raw_url } : null,
+    agent: actor.agent ? { id: actor.agent.agent_id, name: actor.agent.name, is_default: !!actor.agent.is_default, mention: `@${mentionHandle(actor.user.upn, actor.agent.is_default ? null : actor.agent.agent_id)}` } : null,
+    agents: listAgents(db, actor.user.upn).map((a) => ({ id: a.agent_id, name: a.name, is_default: !!a.is_default })),
     hint: actor.project ? undefined : '当前连接没有绑定项目（缺少 X-Project header），写操作会被拒绝。',
   }
 }
@@ -45,7 +48,22 @@ export function projectsView(db: DB, actor: Actor, all = false) {
 }
 
 export function usersView(db: DB) {
-  return listUsers(db).map((u) => ({ handle: localPart(u.upn), upn: u.upn, display_name: u.display_name, department: u.department }))
+  const agents = db.prepare('SELECT user_upn, agent_id, name, is_default FROM agents ORDER BY is_default DESC, agent_id').all() as { user_upn: string; agent_id: string; name: string; is_default: number }[]
+  return listUsers(db).map((u) => {
+    const mine = agents.filter((a) => a.user_upn === u.upn)
+    return {
+      handle: localPart(u.upn),
+      upn: u.upn,
+      display_name: u.display_name,
+      department: u.department,
+      // 只有多个 agent 才值得列：@handle 给默认的，@handle/<id> 指名
+      agents: mine.length > 1 ? mine.map((a) => ({ id: a.agent_id, name: a.name, is_default: !!a.is_default, mention: a.is_default ? `@${localPart(u.upn)}` : `@${localPart(u.upn)}/${a.agent_id}` })) : undefined,
+    }
+  })
+}
+
+function getAgentIdStr(db: DB, id: number): string | null {
+  return (db.prepare('SELECT agent_id FROM agents WHERE id = ?').get(id) as { agent_id: string } | undefined)?.agent_id ?? null
 }
 
 function requireProject(actor: Actor) {
@@ -67,7 +85,7 @@ export async function createPost(db: DB, actor: Actor, args: CreatePostArgs) {
   if (!target) throw badRequest('需要指定目标项目')
   await auditContent(db, actor, { kind: 'post', title: args.title, body: args.body, projectSlug: target.slug })
   const { post, mentions } = posts.createPost(db, actor, { project: target, title: args.title, body: args.body, mentions: args.mentions })
-  return { post_id: post.id, url: `${config.baseUrl}/posts/${post.id}`, project: target.slug, mentions: mentions.map((m) => ({ mention_id: m.id, target: localPart(m.target_upn), status: m.status })) }
+  return { post_id: post.id, url: `${config.baseUrl}/posts/${post.id}`, project: target.slug, mentions: mentions.map((m) => ({ mention_id: m.id, target: mentionHandle(m.target_upn, m.target_agent_id ? getAgentIdStr(db, m.target_agent_id) : null), status: m.status })) }
 }
 
 export function postDetail(db: DB, actor: Actor, id: number) {
@@ -90,7 +108,7 @@ export function postDetail(db: DB, actor: Actor, id: number) {
     updated_at: post.updated_at,
     mentions: summary.mentions.map((m) => {
       const full = posts.getMention(db, m.id)!
-      return { mention_id: m.id, target: localPart(m.target_upn), target_name: m.target_name, status: m.status, note: full.note, claimed_at: full.claimed_at, done_at: full.done_at }
+      return { mention_id: m.id, target: mentionHandle(m.target_upn, m.target_agent), target_handle: localPart(m.target_upn), target_agent: m.target_agent, target_name: m.target_name, status: m.status, note: full.note, claimed_at: full.claimed_at, done_at: full.done_at }
     }),
     replies: replies.map((r) => ({ id: r.id, author: localPart(r.author_upn), author_name: name(r.author_upn), source_project: projectSlug(r.source_project_id), body: r.body, created_at: r.created_at })),
     attachments: attachments.map((a) => ({ id: a.id, filename: a.filename, size: a.size, mime: a.mime, reply_id: a.reply_id, uploader: localPart(a.uploader_upn), url: `${config.baseUrl}/api/v1/attachments/${a.id}`, created_at: a.created_at })),
@@ -155,7 +173,7 @@ function mentionView(id: number, status: MentionStatus) {
 }
 
 export function addMentions(db: DB, actor: Actor, postId: number, mentions: string[]) {
-  return posts.addMentions(db, actor, postId, mentions).map((m) => ({ mention_id: m.id, target: localPart(m.target_upn), status: m.status }))
+  return posts.addMentions(db, actor, postId, mentions).map((m) => ({ mention_id: m.id, target: mentionHandle(m.target_upn, m.target_agent_id ? getAgentIdStr(db, m.target_agent_id) : null), status: m.status }))
 }
 
 export async function uploadAttachment(

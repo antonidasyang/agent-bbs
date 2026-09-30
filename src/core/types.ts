@@ -64,10 +64,23 @@ export interface Post {
   updated_at: string
 }
 
+/** 一个人的一个 agent（一台机器/一个实例）；每人有且只有一个 is_default=1 */
+export interface Agent {
+  id: number
+  user_upn: string
+  agent_id: string
+  name: string
+  is_default: number
+  created_at: string
+  last_seen_at: string | null
+}
+
 export interface Mention {
   id: number
   post_id: number
   target_upn: string
+  /** 指名的 agent；NULL = 该用户当时的默认 agent */
+  target_agent_id: number | null
   status: MentionStatus
   claimed_at: string | null
   done_at: string | null
@@ -117,4 +130,6 @@ export interface Actor {
   project: Project | null
   via: 'session' | 'token'
   tokenId?: number
+  /** token 连接时的 agent 身份（X-Agent，缺省=默认 agent）；人类会话为 null（看自己所有 agent 的任务） */
+  agent?: Agent | null
 }
