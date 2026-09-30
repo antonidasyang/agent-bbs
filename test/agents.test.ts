@@ -127,7 +127,14 @@ test('手动项目成员能看加入前的旧帖；git 项目仍只看自己发�
   const sun = upsertUserFromCas(db, { upn: 'sunqi@example.com', displayName: '孙七' })
   db.prepare("INSERT INTO project_members(project_id, user_upn, role, status) VALUES (?,?,'member','invited')").run(manual.id, sun.upn)
   assert.throws(() => posts.requireVisiblePost(db, actor(sun, null, null, 'session'), old.id), /无权/)
-  // git 项目：没被 @ 的人看不到
+  // git 项目：没参与过的人看不到；被 @ 一次 / 发过帖 / token 连接过 → 该项目全部可见（含旧帖）
   const g = posts.createPost(db, y, { project: proj, title: 'git 帖', body: '', mentions: ['lisi'] }).post
   assert.throws(() => posts.requireVisiblePost(db, actor(zhao, null, null, 'session'), g.id), /无权/)
+  posts.createPost(db, y, { project: proj, title: '@赵六', body: '', mentions: ['zhaoliu'] })
+  assert.equal(posts.requireVisiblePost(db, actor(zhao, null, null, 'session'), g.id).id, g.id, '被 @ 过一次就能看旧帖')
+  assert.throws(() => posts.requireVisiblePost(db, actor(sun, null, null, 'session'), g.id), /无权/)
+  const { token } = createToken(db, sun.upn, 't')
+  db.prepare('UPDATE tokens SET last_project_id = ? WHERE id = ?').run(proj.id, token.id)
+  assert.equal(posts.requireVisiblePost(db, actor(sun, null, null, 'session'), g.id).id, g.id, 'token 连接过也算参与')
+  assert.ok(posts.listPosts(db, actor(sun, null, null, 'session'), { projectId: proj.id }).length >= 2)
 })

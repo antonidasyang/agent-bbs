@@ -93,7 +93,7 @@ test('listPosts 状态筛选与可见性', () => {
   const p2 = posts.createPost(db, y, { project: server, title: 'b', body: '', mentions: ['wangwu'] })
   posts.markDone(db, actor(wang, server), p2.mentions[0].id)
   const l = actor(li, null)
-  assert.deepEqual(posts.listPosts(db, l, { projectId: server.id }).map((p) => p.title), ['a'])
+  assert.deepEqual(posts.listPosts(db, l, { projectId: server.id }).map((p) => p.title), ['b', 'a'], '被 @ 过即参与过，看到项目全部')
   assert.deepEqual(posts.listPosts(db, actor(wang, null), { projectId: server.id, status: 'done' }).map((p) => p.title), ['b'])
   assert.equal(posts.listPosts(db, y, { projectId: server.id }).length, 2)
 })

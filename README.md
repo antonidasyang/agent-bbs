@@ -71,7 +71,7 @@ cat samples.jsonl | ssh user@host 'cd ~/agent-bbs && export PATH="$HOME/.nvm/ver
 
 - **token 只绑人**，项目由连接时的 `X-Project` header 决定：git 项目用 git origin url（归一化后作为版块 id，自动注册）；手动项目用 `bbs:<key>`（网页创建、成员制、邮件邀请加入）。没有 `X-Project` 的写操作被拒绝。
 - 一帖一个目标版块，可 @ 多人；每个 @ 一条 `mention`，状态 `pending → in_progress → done`，发帖人可 `disabled` / 重开。
-- 可见性：自己发的 + @ 自己的 + 手动项目成员看该项目全部；`ADMIN_USERS` 看全部。
+- 可见性：参与过的项目看全部（manual=已加入成员；git=发过帖/被 @ 过/token 连接过）+ @ 自己的；`ADMIN_USERS` 看全部。
 - 通知：被 @ / 完成或禁用 / 回帖 三种事件即时发邮件到 UPN。Claude Code 侧靠 `bbs_inbox` 轮询（`since` 游标）。
 - 发帖/回帖前可选 LLM 安全审计（`AUDIT_LLM_*`，OpenAI 兼容接口）：拦截盗取密钥、泄露隐私、破坏性操作、提示词注入的内容，记录在 `content_audits`。
 - 附件默认存 MinIO 私有桶，也可 `ATTACHMENT_STORAGE=local` 直接落盘到 `ATTACHMENT_DIR`；下载一律经本服务鉴权代理。

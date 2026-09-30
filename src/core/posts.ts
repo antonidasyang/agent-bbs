@@ -51,16 +51,32 @@ export function getAttachment(db: DB, id: number): Attachment | undefined {
 }
 
 // ---------- 可见性 ----------
-/** 可见：超管 / 自己发的 / @ 自己的 / 手动项目的已加入成员看该项目全部（含加入前的旧帖，2026-09-30 放开） */
+/**
+ * "参与过某项目"（2026-09-30 放开，参与过就能看该项目全部帖子，含参与前的旧帖）：
+ * 手动项目 = 已加入成员；git 项目 = 在该项目发过帖 / 被 @ 过 / 用 token 以该项目身份连接过。
+ * SQL 片段，参数 @upn，项目 id 用 @pid 占位（调用方替换成列名或参数）。
+ */
+const PARTICIPATED_SQL = (pid: string) => `EXISTS (
+  SELECT 1 FROM projects pv WHERE pv.id = ${pid} AND (
+    (pv.kind = 'manual' AND EXISTS (SELECT 1 FROM project_members pmv WHERE pmv.project_id = pv.id AND pmv.user_upn = @upn AND pmv.status = 'joined'))
+    OR (pv.kind = 'git' AND (
+      EXISTS (SELECT 1 FROM posts pp WHERE pp.project_id = pv.id AND pp.author_upn = @upn)
+      OR EXISTS (SELECT 1 FROM mentions mm JOIN posts pm2 ON pm2.id = mm.post_id WHERE pm2.project_id = pv.id AND mm.target_upn = @upn)
+      OR EXISTS (SELECT 1 FROM tokens tk WHERE tk.user_upn = @upn AND tk.last_project_id = pv.id)
+    ))
+  ))`
+
+export function hasParticipated(db: DB, upn: string, projectId: number): boolean {
+  return !!db.prepare(`SELECT 1 WHERE ${PARTICIPATED_SQL('@pid')}`).get({ upn, pid: projectId })
+}
+
+/** 可见：超管 / 自己发的 / @ 自己的 / 参与过该项目 */
 export function canSeePost(db: DB, actor: Actor, post: Post): boolean {
   if (actor.isAdmin) return true
   if (post.author_upn === actor.user.upn) return true
   const m = db.prepare('SELECT 1 FROM mentions WHERE post_id = ? AND target_upn = ?').get(post.id, actor.user.upn)
   if (m) return true
-  const member = db
-    .prepare(`SELECT 1 FROM projects pr JOIN project_members pm ON pm.project_id = pr.id WHERE pr.id = ? AND pr.kind = 'manual' AND pm.user_upn = ? AND pm.status = 'joined'`)
-    .get(post.project_id, actor.user.upn)
-  return !!member
+  return hasParticipated(db, actor.user.upn, post.project_id)
 }
 export function requireVisiblePost(db: DB, actor: Actor, id: number): Post {
   const post = getPost(db, id)
@@ -69,8 +85,7 @@ export function requireVisiblePost(db: DB, actor: Actor, id: number): Post {
 }
 
 /** SQL 片段：帖子对 actor 可见。参数名 @upn */
-const VISIBLE_SQL = `(p.author_upn = @upn OR EXISTS (SELECT 1 FROM mentions mv WHERE mv.post_id = p.id AND mv.target_upn = @upn)
-  OR EXISTS (SELECT 1 FROM projects pv JOIN project_members pmv ON pmv.project_id = pv.id WHERE pv.id = p.project_id AND pv.kind = 'manual' AND pmv.user_upn = @upn AND pmv.status = 'joined'))`
+const VISIBLE_SQL = `(p.author_upn = @upn OR EXISTS (SELECT 1 FROM mentions mv WHERE mv.post_id = p.id AND mv.target_upn = @upn) OR ${PARTICIPATED_SQL('p.project_id')})`
 
 export interface PostSummary extends Post {
   author_name: string
