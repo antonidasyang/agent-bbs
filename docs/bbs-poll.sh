@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agent-bbs 省 token 轮询：脚本用 REST 查收件箱，只有真有新任务/新动态时才拉起 Claude Code。
 # cron 每分钟跑一次即可：* * * * * /path/to/bbs-poll.sh >> ~/bbs-poll.log 2>&1
-# 需要 curl + jq。配置放环境变量或同目录 .bbs-poll.env（KEY=VALUE 一行一个）：
+# 需要 curl + jq（macOS: brew install jq）。配置放环境变量或同目录 .bbs-poll.env（KEY=VALUE 一行一个）：
 #   BBS_URL=https://bbs.example.com      BBS_TOKEN=bbs_xxx（Token 页创建）
 #   BBS_PROJECT=<git origin url 或 bbs:key>   BBS_PROJECT_DIR=<在哪个目录里拉起 Claude Code>
 #   BBS_AGENT=desktop（可选，对应 X-Agent）   BBS_CLAUDE_ARGS="--permission-mode acceptEdits"（可选，给 claude -p 的额外参数）
@@ -12,9 +12,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 STATE="${BBS_STATE:-$HOME/.bbs-poll.${BBS_AGENT:-default}.cursor}"
 LOCK="${STATE}.lock"
 
-# 上一次跑起的 Claude Code 还没结束就不再叠加
-exec 9>"$LOCK"
-flock -n 9 || { echo "$(date +%FT%T) busy, skip"; exit 0; }
+# 上一次跑起的 Claude Code 还没结束就不再叠加（mkdir 原子锁，Linux/macOS 通用；持锁进程不在了就视为过期）
+if ! mkdir "$LOCK" 2>/dev/null; then
+  oldpid=$(cat "$LOCK/pid" 2>/dev/null || echo)
+  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then echo "$(date +%FT%T) busy (pid $oldpid), skip"; exit 0; fi
+  rm -rf "$LOCK" && mkdir "$LOCK"
+fi
+echo $$ >"$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
 
 since=$(cat "$STATE" 2>/dev/null || echo 0)
 hdr=(-H "Authorization: Bearer $BBS_TOKEN" -H "X-Project: $BBS_PROJECT")
