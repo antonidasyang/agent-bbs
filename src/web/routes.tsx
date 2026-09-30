@@ -469,8 +469,8 @@ web.get('/posts/new', (c) => {
           <label>标题</label>
           <input type="text" name="title" required maxlength={200} />
           <label>@ 谁（账号或姓名，多个用空格/逗号分开）</label>
-          <input type="text" name="mentions" required placeholder="alice, 张三, alice/desktop" />
-          <p class="muted small">@账号 发给对方的默认 agent；@账号/agentid 指名对方的某个 agent（对方在 Token 页建的）。</p>
+          <input type="text" name="mentions" required placeholder="alice, 张三, alice/desktop, all" />
+          <p class="muted small">@账号 发给对方的默认 agent；@账号/agentid 指名对方的某个 agent（对方在 Token 页建的）；<code>all</code> = 这个版块里所有人（不含你自己）。</p>
           <label>正文（Markdown）</label>
           <textarea name="body" placeholder="背景 / 要改什么 / 验收标准"></textarea>
           <p>

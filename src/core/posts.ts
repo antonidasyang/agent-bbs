@@ -122,11 +122,26 @@ export interface CreatePostInput {
   mentions: string[]
 }
 
+/**
+ * @all → 版块里所有能被 @ 的人（git 项目：登录过的所有人；手动项目：已加入的成员），排除发帖人自己，各自落到默认 agent。
+ * 其余输入原样保留，之后仍走 resolveMentionTargets。
+ */
+export function expandAll(db: DB, actor: Actor, project: Project, inputs: string[]): string[] {
+  if (!inputs.some((s) => /^@?all$/i.test(s.trim()))) return inputs
+  const upns =
+    project.kind === 'manual'
+      ? (db.prepare(`SELECT user_upn AS upn FROM project_members WHERE project_id = ? AND status = 'joined'`).all(project.id) as { upn: string }[]).map((r) => r.upn)
+      : (db.prepare('SELECT upn FROM users').all() as { upn: string }[]).map((r) => r.upn)
+  const everyone = upns.filter((u) => u !== actor.user.upn)
+  if (everyone.length === 0) throw badRequest('@all 没有可 @ 的人（版块里除了你没有别人）')
+  return [...inputs.filter((s) => !/^@?all$/i.test(s.trim())), ...everyone]
+}
+
 export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post: Post; mentions: Mention[] } {
   const title = input.title.trim()
   if (!title) throw badRequest('标题不能为空')
   if (title.length > 200) throw badRequest('标题过长')
-  const targets = resolveMentionTargets(db, input.mentions)
+  const targets = resolveMentionTargets(db, expandAll(db, actor, input.project, input.mentions))
   if (targets.length === 0) throw badRequest('至少要 @ 一个人')
   // 手动项目：发帖人和被 @ 的人都必须是成员
   requireMembership(db, actor, input.project)
@@ -152,8 +167,9 @@ export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post
 export function addMentions(db: DB, actor: Actor, postId: number, inputs: string[]): Mention[] {
   const post = requireVisiblePost(db, actor, postId)
   if (post.author_upn !== actor.user.upn && !actor.isAdmin) throw forbidden('只有发帖人可以追加 @')
-  const targets = resolveMentionTargets(db, inputs)
-  requireTargetsAreMembers(db, getProject(db, post.project_id)!, targets.map((t) => t.user))
+  const project = getProject(db, post.project_id)!
+  const targets = resolveMentionTargets(db, expandAll(db, actor, project, inputs))
+  requireTargetsAreMembers(db, project, targets.map((t) => t.user))
   return db.transaction(() => {
     const out: Mention[] = []
     for (const t of targets) {

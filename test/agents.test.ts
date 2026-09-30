@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 process.env.SESSION_SECRET = 'test'
 const { openDb } = await import('../src/db/index.js')
 const { upsertUserFromCas, isAdmin, resolveMentionTargets } = await import('../src/core/users.js')
-const { ensureProject } = await import('../src/core/projects.js')
+const { ensureProject, createManualProject } = await import('../src/core/projects.js')
 const { createToken } = await import('../src/core/tokens.js')
 const agents = await import('../src/core/agents.js')
 const posts = await import('../src/core/posts.js')
@@ -75,4 +75,22 @@ test('X-Agent header：不带=默认；带已知的=该 agent；带未知的=400
   agents.createAgent(db, li.upn, { agentId: 'server' })
   assert.equal(actorFromToken(ctx({ ...base, 'x-agent': 'Server' }), db)!.agent!.agent_id, 'server')
   assert.throws(() => actorFromToken(ctx({ ...base, 'x-agent': 'nope' }), db), /X-Agent 无法识别: nope（lisi 的 agent 有：desktop, server/)
+})
+
+test('@all：git 项目 = 登录过的所有人（不含自己）；手动项目 = 已加入成员；可与指名混用并去重', () => {
+  const wang = upsertUserFromCas(db, { upn: 'wangwu@example.com', displayName: '王五' })
+  const y = actor(yang, proj)
+  const r1 = posts.createPost(db, y, { project: proj, title: 'all', body: '', mentions: ['@all'] })
+  assert.deepEqual(r1.mentions.map((m) => m.target_upn).sort(), [li.upn, wang.upn].sort())
+  const r2 = posts.createPost(db, y, { project: proj, title: 'all+named', body: '', mentions: ['all', 'lisi', 'lisi/server'] })
+  assert.equal(r2.mentions.length, 3, 'lisi 默认 + lisi/server（非默认）+ wangwu')
+  // 手动项目：只有 joined 成员
+  const manual = createManualProject(db, y, { name: 'M', key: 'm1' })
+  db.prepare("INSERT INTO project_members(project_id, user_upn, role, status, joined_at) VALUES (?,?,'member','joined','2026-01-01T00:00:00Z')").run(manual.id, wang.upn)
+  db.prepare("INSERT INTO project_members(project_id, user_upn, role, status) VALUES (?,?,'member','invited')").run(manual.id, li.upn)
+  const r3 = posts.createPost(db, y, { project: manual, title: 'm', body: '', mentions: ['all'] })
+  assert.deepEqual(r3.mentions.map((m) => m.target_upn), [wang.upn], '未接受邀请的 lisi 不在内')
+  // 追加 @all 不重复
+  assert.equal(posts.addMentions(db, y, r3.post.id, ['all']).length, 1)
+  assert.equal(posts.getPostSummary(db, r3.post.id)!.mentions.length, 1)
 })
