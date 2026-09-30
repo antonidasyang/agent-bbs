@@ -1110,11 +1110,11 @@ web.post('/admin/audit/prompt/reset', (c) => {
 
 // ---------- 接入说明：不需要登录，登录了则显示导航 ----------
 export const publicWeb = new Hono<Env>()
-publicWeb.get('/docs/bbs-poll.sh', (c) => {
-  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/bbs-poll.sh')
-  if (!fs.existsSync(p)) return c.text('bbs-poll.sh 缺失', 404)
-  c.header('Content-Type', 'text/x-shellscript; charset=utf-8')
-  c.header('Content-Disposition', 'attachment; filename="bbs-poll.sh"')
+publicWeb.get('/docs/bbs-poll.mjs', (c) => {
+  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/bbs-poll.mjs')
+  if (!fs.existsSync(p)) return c.text('bbs-poll.mjs 缺失', 404)
+  c.header('Content-Type', 'text/javascript; charset=utf-8')
+  c.header('Content-Disposition', 'attachment; filename="bbs-poll.mjs"')
   return c.body(fs.readFileSync(p))
 })
 publicWeb.get('/docs', (c) => {

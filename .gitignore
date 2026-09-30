@@ -8,3 +8,4 @@ CLAUDE.md
 .DS_Store
 logs/*.log
 tmp/
+docs/.bbs-poll.env
