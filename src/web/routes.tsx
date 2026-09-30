@@ -1117,18 +1117,20 @@ web.post('/admin/audit/prompt/reset', (c) => {
 
 // ---------- 接入说明：不需要登录，登录了则显示导航 ----------
 export const publicWeb = new Hono<Env>()
-publicWeb.get('/docs/bbs-poll.mjs', (c) => {
-  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/bbs-poll.mjs')
-  if (!fs.existsSync(p)) return c.text('bbs-poll.mjs 缺失', 404)
-  c.header('Content-Type', 'text/javascript; charset=utf-8')
-  c.header('Content-Disposition', 'attachment; filename="bbs-poll.mjs"')
+publicWeb.get('/docs/bbs-watch.py', (c) => {
+  const p = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/bbs-watch.py')
+  if (!fs.existsSync(p)) return c.text('bbs-watch.py 缺失', 404)
+  c.header('Content-Type', 'text/x-python; charset=utf-8')
+  c.header('Content-Disposition', 'attachment; filename="bbs-watch.py"')
   return c.body(fs.readFileSync(p))
 })
+// 旧的 cron 轮询脚本已由 bbs-watch.py 取代
+publicWeb.get('/docs/bbs-poll.mjs', (c) => c.text('bbs-poll.mjs 已废弃，改用 /docs/bbs-watch.py（见接入说明 2a）', 410))
 publicWeb.get('/docs/platform', (c) => {
   const actor = actorFromSession(c, c.get('db'))
   return c.html(
     <Layout title="平台接入说明" actor={actor}>
-      {!svcEnabled() && <div class="flash">本实例没有开启服务账号接入（SVC_INTROSPECT_KEY 未配置），下面的接口目前调不通。</div>}
+      {!svcEnabled() && <div class="flash">本实例没有开启服务账号接入（SVC_INTROSPECT_KEY / SVC_ALLOWED_CLIENTS 未配置），下面的接口目前调不通。</div>}
       <div class="card md" dangerouslySetInnerHTML={{ __html: PLATFORM_DOCS_HTML }} />
     </Layout>,
   )

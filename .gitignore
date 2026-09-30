@@ -8,4 +8,4 @@ CLAUDE.md
 .DS_Store
 logs/*.log
 tmp/
-docs/.bbs-poll.env
+docs/__pycache__/

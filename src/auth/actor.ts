@@ -43,7 +43,7 @@ export async function actorFromToken(c: Context, db: DB): Promise<Actor | null> 
   if (!plain.startsWith('bbs_') && svcEnabled()) r = await serviceIdentity(c, db, plain)
   else {
     const t = authenticateToken(db, plain)
-    if (!t) throw unauthorized('token 无效或已吊销')
+    if (!t) throw unauthorized(plain.startsWith('bbs_') ? 'token 无效或已吊销' : 'token 无效（本实例没有开启服务账号令牌接入，只认 bbs_ 开头的 token）')
     r = { user: t.user, tokenId: t.token.id }
   }
   const projectHeader = c.req.header(PROJECT_HEADER)?.trim()

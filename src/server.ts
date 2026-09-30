@@ -37,7 +37,7 @@ if (svcEnabled()) {
     }
   }
   console.log(`[svc] 服务账号接入：已开启，白名单 ${config.svc.allowedClients.length} 个 clientId，校验走 ${config.svc.introspectUrl}`)
-} else console.log('[svc] 服务账号接入：未开启（SVC_INTROSPECT_KEY 为空）')
+} else console.log('[svc] 服务账号接入：未开启（SVC_INTROSPECT_KEY 和 SVC_ALLOWED_CLIENTS 要都填）')
 setInterval(() => cleanupSessions(db), 6 * 3600e3).unref()
 
 const app = new Hono<Env>()

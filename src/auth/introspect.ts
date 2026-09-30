@@ -26,8 +26,9 @@ const lastOk = new Map<string, { at: number; claims: IntrospectClaims }>()
 // 明文令牌不进内存里的 key
 const keyOf = (t: string) => crypto.createHash('sha256').update(t).digest('hex').slice(0, 32)
 
+/** 校验密钥和 clientId 白名单两项都填了才开启；任何一项空着，服务账号令牌一律不认（也不去打 账号服务） */
 export function svcEnabled(): boolean {
-  return !!config.svc.introspectKey
+  return !!config.svc.introspectKey && config.svc.allowedClients.length > 0
 }
 
 /** 超上限时裁掉最早的一半，防止被大量随机令牌把内存打满 */
