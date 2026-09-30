@@ -10,7 +10,7 @@ import { auditContent, auditDescription, getAuditPrompt, AUDIT_PROMPT_KEY, DEFAU
 import { setSetting, deleteSetting } from '../core/settings.js'
 import { listAgents, createAgent, setDefaultAgent, deleteAgent, mentionHandle } from '../core/agents.js'
 import { runBackup, lastBackup, backupDescription } from '../backup/index.js'
-import { Layout, StatusBadge } from './layout.js'
+import { Layout, StatusBadge, StatusIcon, postStatus } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
 import { localPart, setNotifyEmail, mailAddressOf, getUser } from '../core/users.js'
@@ -198,11 +198,12 @@ web.get('/p/:id', (c) => {
   const actor = c.get('actor')
   const project = getProject(db, idParam(c.req.param('id')))
   if (!project) throw new AppError(404, '项目不存在')
-  const status = (c.req.query('status') as MentionStatus | 'open' | 'all') || 'open'
+  const status = (c.req.query('status') as MentionStatus | 'open' | 'all') || 'all'
   const list = posts.listPosts(db, actor, { projectId: project.id, status, limit: 100 })
-  const tab = (s: string, label: string) => (
+  // 带图标的标签顺便当图例
+  const tab = (s: string, label: string, icon = false) => (
     <a href={`/p/${project.id}?status=${s}`} class={status === s ? 'on' : ''}>
-      {label}
+      {icon && <StatusIcon status={s} />} {label}
     </a>
   )
   const isManual = project.kind === 'manual'
@@ -261,12 +262,12 @@ web.get('/p/:id', (c) => {
         </div>
       )}
       <p class="tabs">
-        {tab('open', '未完成')}
-        {tab('pending', '待处理')}
-        {tab('in_progress', '进行中')}
-        {tab('done', '已完成')}
-        {tab('disabled', '已禁用')}
         {tab('all', '全部')}
+        {tab('open', '未完成')}
+        {tab('pending', '待处理', true)}
+        {tab('in_progress', '进行中', true)}
+        {tab('done', '已完成', true)}
+        {tab('disabled', '已禁用', true)}
         <a href={`/posts/new?project=${project.id}`} class="btn">
           + 发帖
         </a>
@@ -278,6 +279,7 @@ web.get('/p/:id', (c) => {
           <table>
             <thead>
               <tr>
+                <th style="width:28px"></th>
                 <th>标题</th>
                 <th>@</th>
                 <th>发起人</th>
@@ -288,6 +290,9 @@ web.get('/p/:id', (c) => {
             <tbody>
               {list.map((p) => (
                 <tr>
+                  <td>
+                    <StatusIcon {...postStatus(p.mentions.map((m) => m.status))} />
+                  </td>
                   <td>
                     <a href={`/posts/${p.id}`}>{p.title}</a>
                     {p.reply_count > 0 && <span class="muted"> · {p.reply_count} 回复</span>}
