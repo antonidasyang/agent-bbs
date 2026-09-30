@@ -1,4 +1,7 @@
 import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { config } from './config.js'
@@ -43,6 +46,9 @@ app.onError((err, c) => {
 })
 
 app.get('/healthz', (c) => c.json({ ok: true }))
+// KaTeX 的 CSS 和字体本地提供，不依赖 CDN（内网浏览器不一定能出网）
+const katexDist = path.relative(process.cwd(), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../node_modules/katex/dist'))
+app.use('/static/katex/*', serveStatic({ root: katexDist, rewriteRequestPath: (p) => p.replace(/^\/static\/katex/, ''), onFound: (_p, c) => c.header('Cache-Control', 'public, max-age=604800, immutable') }))
 app.get('/favicon.ico', (c) => c.body(null, 204))
 app.route('/auth', auth)
 app.route('/api/v1', api)

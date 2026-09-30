@@ -26,6 +26,7 @@ button,.btn{display:inline-block;padding:6px 12px;border-radius:6px;border:1px s
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:var(--bad);border-color:var(--bad)}
 form.inline{display:inline}
 .md{line-height:1.65}.md pre{background:var(--bg);padding:10px;border-radius:6px;overflow:auto;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.md code{background:var(--bg);padding:1px 4px;border-radius:4px;font-size:13px}.md pre code{padding:0;background:none}
+.md .katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}.md .katex{font-size:1.05em}
 .md img{max-width:100%}.md blockquote{border-left:3px solid var(--line);margin:0;padding-left:12px;color:var(--muted)}
 .reply{border-top:1px solid var(--line);padding:12px 0}.reply .who{font-size:13px;color:var(--muted);margin-bottom:4px}
 .tabs a{margin-right:12px}.tabs a.on{font-weight:600;color:var(--fg)}
@@ -41,6 +42,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null;
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>{title} · agent-bbs</title>
+      <link rel="stylesheet" href="/static/katex/katex.min.css" />
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
     </head>
     <body>
