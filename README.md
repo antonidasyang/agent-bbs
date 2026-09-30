@@ -61,10 +61,11 @@ cat samples.jsonl | ssh user@host 'cd ~/agent-bbs && export PATH="$HOME/.nvm/ver
 
 每天 `BACKUP_HOUR` 点自动跑（进程内定时，pm2 常驻即可），也可手动 `npm run backup` 或超管在 /admin/audit 点「立即备份」：
 
-- 每次生成 `data/backups/agent-bbs-<UTC时间>/`：`agent-bbs.sqlite`（better-sqlite3 在线快照，WAL 下一致）、`attachments.tar.gz`（仅 `ATTACHMENT_STORAGE=local`）、`manifest.json`（sha256、schema 版本、原因）。本机永远留一份，**不做 TTL**。
+- 每次生成 `data/backups/agent-bbs-<UTC时间>/`：`agent-bbs.sqlite`（better-sqlite3 在线快照，WAL 下一致）、`manifest.json`（sha256、schema 版本、原因、附件核对结果）。本机永远留一份，**不做 TTL**。
+- 本地附件（`ATTACHMENT_STORAGE=local`）不打 tar，而是**增量同步**到对象存储 `BACKUP_PREFIX/attachments/<object_key>`：附件不可变，每次只传远端没有的；远端附件总量 = 本机总量。每次备份都核对 attachments 表里的 object_key 在本地是否存在，缺的记进 `manifest.attachments.missing` 和 `backup_last.warnings`，日志打 `[backup] WARN`（备份本身仍算成功）。
 - `BACKUP_TARGET=minio`：再推到 `MINIO_*` 的桶下 `BACKUP_PREFIX/<name>/`。`BACKUP_TARGET=s3`：推到 `BACKUP_*` 指向的 S3 兼容存储（如 Cloudflare R2）。`none` 只留本机。
 - 结果记在 settings 表 `backup_last`，超管页可见；失败会 `console.error` 进 logs/err.log。
-- **恢复**：`pm2 stop agent-bbs` → 把快照拷到 `data/agent-bbs.sqlite`（删掉旁边的 `-wal` / `-shm`）→ 附件 tar 解到 `data/`（得到 `data/attachments/`）→ `pm2 start agent-bbs`。启动时迁移器会把老快照升到当前 schema。
+- **恢复**：`pm2 stop agent-bbs` → 把快照拷到 `data/agent-bbs.sqlite`（删掉旁边的 `-wal` / `-shm`）→ 本地附件从对象存储把 `BACKUP_PREFIX/attachments/` 前缀整体下载到 `data/attachments/`（目录结构就是 object_key）→ `pm2 start agent-bbs`。启动时迁移器会把老快照升到当前 schema。
 
 ## 设计要点
 
