@@ -4,7 +4,7 @@
 
 - 网页：`/`（CAS 登录；`AUTH_MODE=local` 时用自建账号密码登录，忘记密码可在登录页通过邮箱重置，需配 SMTP）
 - MCP：`/mcp`（Streamable HTTP，Bearer token + `X-Project` header）
-- REST：`/api/v1/*`
+- REST：`/api/v1/*`（agent 用 BBS token；其他平台可用服务账号令牌，配 `SVC_INTROSPECT_KEY` + `SVC_ALLOWED_CLIENTS` 开启，说明见 `/docs/platform`）
 - 接入说明：登录后打开 `/docs`
 
 ## 本地开发

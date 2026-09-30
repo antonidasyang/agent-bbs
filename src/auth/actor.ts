@@ -1,13 +1,15 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import type { DB } from '../db/index.js'
 import type { Actor } from '../core/types.js'
-import { authenticateToken, touchToken } from '../core/tokens.js'
+import { authenticateToken, ensureServiceToken, touchToken } from '../core/tokens.js'
 import { ensureProject } from '../core/projects.js'
 import { requireMembership } from '../core/members.js'
-import { isAdmin, localPart } from '../core/users.js'
+import { ensureServiceUser, isAdmin, localPart } from '../core/users.js'
+import type { User } from '../core/types.js'
+import { introspect, svcEnabled } from './introspect.js'
 import { ensureDefaultAgent, getAgent, listAgents, touchAgent } from '../core/agents.js'
 import { sessionUser } from './session.js'
-import { unauthorized, badRequest, AppError } from '../core/errors.js'
+import { unauthorized, badRequest, forbidden, AppError } from '../core/errors.js'
 import { config } from '../config.js'
 
 export type Env = { Variables: { actor: Actor; db: DB } }
@@ -15,13 +17,35 @@ export type Env = { Variables: { actor: Actor; db: DB } }
 export const PROJECT_HEADER = 'x-project'
 export const AGENT_HEADER = 'x-agent'
 
-/** Bearer token → Actor；X-Project header 决定项目 */
-export function actorFromToken(c: Context, db: DB): Actor | null {
+/**
+ * 其他平台：Bearer 是服务账号令牌（JWT），远程 introspect 校验。
+ * 校验通过只证明"是某个已登记的服务账号"，能不能调 BBS 看 SVC_ALLOWED_CLIENTS 白名单。
+ */
+async function serviceIdentity(c: Context, db: DB, plain: string): Promise<{ user: User; tokenId: number }> {
+  const r = await introspect(plain)
+  if (r.result === 'unavailable') throw new AppError(503, '令牌校验服务暂时不可用，请稍后重试', 'auth_unavailable')
+  if (r.result === 'inactive') throw unauthorized('令牌无效、已过期或已被撤销')
+  if (r.claims.type !== 'client_credentials') throw forbidden('只接受服务账号令牌（client_credentials），不接受个人登录令牌')
+  const clientId = r.claims.sub.toLowerCase()
+  if (!config.svc.allowedClients.includes(clientId)) throw forbidden(`服务账号 ${clientId} 不在本 BBS 的允许名单里，请联系 BBS 管理员`)
+  const user = ensureServiceUser(db, clientId, r.claims.name)
+  console.log(`[svc] ${clientId}(${user.display_name}) ${c.req.method} ${c.req.path}${r.degraded ? ' [降级放行]' : ''}`)
+  return { user, tokenId: ensureServiceToken(db, user.upn).id }
+}
+
+/** Bearer token → Actor；X-Project header 决定项目。bbs_ 开头是本站 token，其余（开了服务账号接入时）按服务账号令牌校验 */
+export async function actorFromToken(c: Context, db: DB): Promise<Actor | null> {
   const auth = c.req.header('authorization') ?? ''
   const m = /^Bearer\s+(.+)$/i.exec(auth)
   if (!m) return null
-  const r = authenticateToken(db, m[1].trim())
-  if (!r) throw unauthorized('token 无效或已吊销')
+  const plain = m[1].trim()
+  let r: { user: User; tokenId: number }
+  if (!plain.startsWith('bbs_') && svcEnabled()) r = await serviceIdentity(c, db, plain)
+  else {
+    const t = authenticateToken(db, plain)
+    if (!t) throw unauthorized('token 无效或已吊销')
+    r = { user: t.user, tokenId: t.token.id }
+  }
   const projectHeader = c.req.header(PROJECT_HEADER)?.trim()
   let project = null
   if (projectHeader) {
@@ -43,10 +67,10 @@ export function actorFromToken(c: Context, db: DB): Actor | null {
   } else {
     agent = ensureDefaultAgent(db, r.user.upn)
   }
-  const actor: Actor = { user: r.user, isAdmin: isAdmin(r.user.upn), project, via: 'token', tokenId: r.token.id, agent }
+  const actor: Actor = { user: r.user, isAdmin: !r.user.is_service && isAdmin(r.user.upn), project, via: 'token', tokenId: r.tokenId, agent }
   // 手动项目：非成员不能以该项目身份连接
   if (project) requireMembership(db, actor, project)
-  touchToken(db, r.token.id, project?.id ?? null)
+  touchToken(db, r.tokenId, project?.id ?? null)
   touchAgent(db, agent.id)
   return actor
 }
@@ -59,7 +83,7 @@ export function actorFromSession(c: Context, db: DB): Actor | null {
 
 /** API / MCP：只认 Bearer */
 export const requireToken: MiddlewareHandler<Env> = async (c, next) => {
-  const actor = actorFromToken(c, c.get('db'))
+  const actor = await actorFromToken(c, c.get('db'))
   if (!actor) throw unauthorized('需要 Authorization: Bearer <token>')
   c.set('actor', actor)
   await next()
@@ -94,7 +118,7 @@ export const requireSession: MiddlewareHandler<Env> = async (c, next) => {
 /** 附件下载：两种都行（网页点链接用 cookie，agent 用 token） */
 export const requireAny: MiddlewareHandler<Env> = async (c, next) => {
   const db = c.get('db')
-  const actor = actorFromToken(c, db) ?? actorFromSession(c, db)
+  const actor = (await actorFromToken(c, db)) ?? actorFromSession(c, db)
   if (!actor) throw unauthorized()
   c.set('actor', actor)
   await next()

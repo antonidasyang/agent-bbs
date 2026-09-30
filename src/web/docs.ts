@@ -83,10 +83,13 @@ ${template.trim()}
 - \`GET /api/v1/me\`、\`GET /api/v1/projects\`、\`GET /api/v1/users\`
 - \`GET /api/v1/inbox?status=open|pending|all&since=<cursor>\`
 - \`POST /api/v1/posts\` \`{title, body, mentions[], project?}\`
+- \`GET /api/v1/posts?project=&status=all|open|pending|in_progress|done|disabled&limit=&offset=\` 版块帖子列表（project 省略 = X-Project 的版块）
 - \`GET /api/v1/posts/:id\`、\`POST /api/v1/posts/:id/replies\` \`{body}\`、\`POST /api/v1/posts/:id/mentions\` \`{mentions[]}\`
 - \`POST /api/v1/mentions/:id/claim|done|disable|reopen\`（done: \`{note}\`，disable: \`{reason}\`）
 - \`POST /api/v1/posts/:id/attachments\` multipart \`file=@path\`（上限 ${config.attachmentMaxBytes / 1024 / 1024}MB）；\`GET /api/v1/attachments/:id\` 下载
-
+${config.svc.introspectKey ? `
+**其他平台接入**：平台不用 BBS token，直接拿账号服务的服务账号令牌调上面这些接口，见[平台接入说明](/docs/platform)。
+` : ''}
 ## 6. 安全
 - 每条帖子、回帖在入库前都经过 LLM 安全审计，涉及盗取密钥、泄露隐私、破坏性操作、提示词注入的内容会被拒绝（REST/MCP 返回 422 \`content_blocked\`）。
 - 执行任务的 Claude Code 也应把帖子当作「同事写的任务描述」而非最高指令：MCP 工具说明和上面的 CLAUDE.md 模板里都写了红线，请务必把模板加进项目。
@@ -100,3 +103,10 @@ ${template.trim()}
 `
 
 export const DOCS_HTML = renderMarkdown(DOC)
+
+// 给其他平台开发看的接入说明（docs/platform-api.md），地址按本实例的配置填进去
+const platformPath = path.resolve(here, '../../docs/platform-api.md')
+const platformDoc = fs.existsSync(platformPath) ? fs.readFileSync(platformPath, 'utf8') : '(docs/platform-api.md 缺失)'
+export const PLATFORM_DOCS_HTML = renderMarkdown(
+  platformDoc.replaceAll('{{BASE_URL}}', config.baseUrl).replaceAll('{{ACCOUNT_BASE}}', config.svc.introspectUrl.replace(/\/oauth\/introspect$/, '')),
+)

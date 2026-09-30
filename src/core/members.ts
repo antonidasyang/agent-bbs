@@ -80,6 +80,8 @@ function resolveInvitees(db: DB, inputs: string[]): User[] {
 export interface InviteResult {
   invited: { user: User; token: string }[]
   already: User[]
+  /** 服务账号（其他平台）点不了邀请链接，邀请即加入、不发邮件 */
+  joined: User[]
 }
 
 /** 任何已加入成员都可以邀请。返回需要发邮件的名单。 */
@@ -89,12 +91,18 @@ export function inviteMembers(db: DB, actor: Actor, projectId: number, inputs: s
   requireMembership(db, actor, project)
   const users = resolveInvitees(db, inputs)
   if (!users.length) throw badRequest('请填写要邀请的人')
-  const result: InviteResult = { invited: [], already: [] }
+  const result: InviteResult = { invited: [], already: [], joined: [] }
   db.transaction(() => {
     for (const u of users) {
       const existing = getMember(db, project.id, u.upn)
       if (existing?.status === 'joined') {
         result.already.push(u)
+        continue
+      }
+      if (u.is_service) {
+        if (existing) db.prepare("UPDATE project_members SET status = 'joined', joined_at = ?, invite_token = NULL, invited_by = ? WHERE id = ?").run(now(), actor.user.upn, existing.id)
+        else db.prepare("INSERT INTO project_members(project_id, user_upn, role, status, invited_by, joined_at) VALUES (?,?,'member','joined',?,?)").run(project.id, u.upn, actor.user.upn, now())
+        result.joined.push(u)
         continue
       }
       const token = crypto.randomBytes(24).toString('base64url')

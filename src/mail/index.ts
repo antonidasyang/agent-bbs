@@ -47,9 +47,15 @@ function recipientsFor(db: DB, ev: Event): { to: string[]; subject: string; body
   const actorName = actor ? `${actor.display_name}(@${localPart(actor.upn)})` : ev.actor_upn
   const link = `${config.baseUrl}/posts/${post.id}`
   const tail = `\n\n查看：${link}\n\n—— agent-bbs 自动邮件`
-  const mailOf = (upn: string) => {
+  // 服务账号（其他平台）没有信箱，不发
+  const mailOf = (upn: string): string | null => {
     const u = getUser(db, upn)
+    if (u?.is_service) return null
     return u ? mailAddressOf(u) : upn
+  }
+  const add = (to: Set<string>, upn: string) => {
+    const a = mailOf(upn)
+    if (a) to.add(a)
   }
 
   switch (ev.type) {
@@ -58,8 +64,10 @@ function recipientsFor(db: DB, ev: Event): { to: string[]; subject: string; body
       const m = ev.mention_id ? getMention(db, ev.mention_id) : undefined
       const agentId = m?.target_agent_id ? (db.prepare('SELECT agent_id FROM agents WHERE id = ?').get(m.target_agent_id) as { agent_id: string } | undefined)?.agent_id : undefined
       const who = agentId ? `你的 agent「${agentId}」` : '你'
+      const addr = mailOf(ev.target_upn)
+      if (!addr) return null
       return {
-        to: [mailOf(ev.target_upn)],
+        to: [addr],
         subject: `[agent-bbs] ${actorName} @ 了${who}：${post.title}`,
         body: `${actorName} 在帖子「${post.title}」中 @ 了${who}，${agentId ? `以 X-Agent: ${agentId} 接入的` : '你的'} AI 编程助手在对应项目里执行 bbs_inbox 即可看到。\n\n${post.body.slice(0, 2000)}${tail}`,
       }
@@ -71,8 +79,8 @@ function recipientsFor(db: DB, ev: Event): { to: string[]; subject: string; body
       const label = ev.type === 'done' ? '已完成' : '已禁用'
       // 完成通知发帖人；禁用通知被 @ 的人和发帖人
       const to = new Set<string>()
-      if (post.author_upn !== ev.actor_upn) to.add(mailOf(post.author_upn))
-      if (ev.type === 'disabled' && mention && mention.target_upn !== ev.actor_upn) to.add(mailOf(mention.target_upn))
+      if (post.author_upn !== ev.actor_upn) add(to, post.author_upn)
+      if (ev.type === 'disabled' && mention && mention.target_upn !== ev.actor_upn) add(to, mention.target_upn)
       return {
         to: [...to],
         subject: `[agent-bbs] ${label}：${post.title}`,
@@ -83,8 +91,8 @@ function recipientsFor(db: DB, ev: Event): { to: string[]; subject: string; body
       const reply = ev.reply_id ? (db.prepare('SELECT body FROM replies WHERE id = ?').get(ev.reply_id) as { body: string } | undefined) : undefined
       // 帖子相关的所有人（发帖人 + 被 @ 的人），除了回帖者自己
       const to = new Set<string>()
-      if (post.author_upn !== ev.actor_upn) to.add(mailOf(post.author_upn))
-      for (const m of listMentions(db, post.id)) if (m.target_upn !== ev.actor_upn && m.status !== 'disabled') to.add(mailOf(m.target_upn))
+      if (post.author_upn !== ev.actor_upn) add(to, post.author_upn)
+      for (const m of listMentions(db, post.id)) if (m.target_upn !== ev.actor_upn && m.status !== 'disabled') add(to, m.target_upn)
       return {
         to: [...to],
         subject: `[agent-bbs] ${actorName} 回复了：${post.title}`,

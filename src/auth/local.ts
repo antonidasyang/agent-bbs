@@ -47,6 +47,7 @@ export function registerLocalUser(db: DB, args: { username: string; displayName:
   checkPassword(args.password)
   const upn = `${username}@${config.accountDomain}`
   const existing = getUser(db, upn)
+  if (existing?.is_service) throw badRequest('该账号是服务账号，不能注册')
   if (existing?.password_hash) throw badRequest('该账号已注册，请直接登录')
   const hash = hashPassword(args.password)
   if (existing) {
@@ -74,6 +75,7 @@ export function beginSignup(db: DB, args: { username: string; displayName: strin
   checkPassword(args.password)
   const upn = `${username}@${config.accountDomain}`
   const existing = getUser(db, upn)
+  if (existing?.is_service) throw badRequest('该账号是服务账号，不能注册')
   if (existing?.password_hash) throw badRequest('该账号已注册，请直接登录')
   const emailTaken = db.prepare('SELECT 1 FROM users WHERE password_hash IS NOT NULL AND (mail = ? OR notify_email = ?)').get(email, email)
   if (emailTaken) throw badRequest('该邮箱已被其他账号使用')
@@ -91,6 +93,7 @@ export function completeSignup(db: DB, token: string): User {
     | undefined
   if (!row || row.expires_at < now()) throw badRequest('验证链接无效或已过期，请重新注册')
   const existing = getUser(db, row.upn)
+  if (existing?.is_service) throw badRequest('该账号是服务账号，不能注册')
   if (existing?.password_hash) throw badRequest('该账号已注册，请直接登录')
   db.transaction(() => {
     if (existing) {

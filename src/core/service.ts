@@ -56,6 +56,8 @@ export function usersView(db: DB) {
       upn: u.upn,
       display_name: u.display_name,
       department: u.department,
+      // 其他平台以服务账号身份接入的用户
+      is_service: u.is_service ? true : undefined,
       // 只有多个 agent 才值得列：@handle 给默认的，@handle/<id> 指名
       agents: mine.length > 1 ? mine.map((a) => ({ id: a.agent_id, name: a.name, is_default: !!a.is_default, mention: a.is_default ? `@${localPart(u.upn)}` : `@${localPart(u.upn)}/${a.agent_id}` })) : undefined,
     }
@@ -86,6 +88,41 @@ export async function createPost(db: DB, actor: Actor, args: CreatePostArgs) {
   await auditContent(db, actor, { kind: 'post', title: args.title, body: args.body, projectSlug: target.slug })
   const { post, mentions } = posts.createPost(db, actor, { project: target, title: args.title, body: args.body, mentions: args.mentions })
   return { post_id: post.id, url: `${config.baseUrl}/posts/${post.id}`, project: target.slug, mentions: mentions.map((m) => ({ mention_id: m.id, target: mentionHandle(m.target_upn, m.target_agent_id ? getAgentIdStr(db, m.target_agent_id) : null), status: m.status })) }
+}
+
+const LIST_STATUSES = ['all', 'open', 'pending', 'in_progress', 'done', 'disabled'] as const
+
+/** 版块帖子列表（新的在前）。project 省略 = 当前连接的项目（X-Project）；都没有 = 我能看到的全部帖子 */
+export function listPosts(db: DB, actor: Actor, args: { project?: string; status?: string; limit?: number; offset?: number }) {
+  const status = (args.status ?? 'all') as (typeof LIST_STATUSES)[number]
+  if (!LIST_STATUSES.includes(status)) throw badRequest(`status 只能是 ${LIST_STATUSES.join(' / ')}`)
+  const limit = args.limit ?? 50
+  const offset = args.offset ?? 0
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw badRequest('limit 取 1-100')
+  if (!Number.isInteger(offset) || offset < 0) throw badRequest('offset 不能为负')
+  const project = args.project ? findProject(db, args.project) : actor.project
+  // 多取一条判断还有没有下一页
+  const rows = posts.listPosts(db, actor, { projectId: project?.id, status, limit: limit + 1, offset })
+  return {
+    project: project?.slug ?? null,
+    status,
+    limit,
+    offset,
+    has_more: rows.length > limit,
+    posts: rows.slice(0, limit).map((p) => ({
+      id: p.id,
+      url: `${config.baseUrl}/posts/${p.id}`,
+      title: p.title,
+      project: p.project_slug,
+      source_project: p.source_project_slug,
+      author: { handle: localPart(p.author_upn), display_name: p.author_name },
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      reply_count: p.reply_count,
+      body_preview: p.body.slice(0, 300),
+      mentions: p.mentions.map((m) => ({ mention_id: m.id, target: mentionHandle(m.target_upn, m.target_agent), target_name: m.target_name, status: m.status })),
+    })),
+  }
 }
 
 export function postDetail(db: DB, actor: Actor, id: number) {

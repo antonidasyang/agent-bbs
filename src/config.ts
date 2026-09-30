@@ -37,6 +37,12 @@ export const config = {
     // login 与 validate 必须用一字不差的 service
     serviceUrl: `${baseUrl}/auth/cas/callback`,
   },
+  // 其他平台用账号服务的「服务账号令牌」调 REST/MCP：远程 introspect 校验；KEY 为空 = 关闭。白名单是 clientId 列表
+  svc: {
+    introspectUrl: env('SVC_INTROSPECT_URL', `${env('CAS_BASE_URL', 'https://cas.example.com').replace(/\/+$/, '')}/oauth/introspect`),
+    introspectKey: process.env.SVC_INTROSPECT_KEY ?? '',
+    allowedClients: (process.env.SVC_ALLOWED_CLIENTS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  },
   minio: {
     endPoint: env('MINIO_ENDPOINT', 'minio.example.com'),
     port: Number(env('MINIO_PORT', '9000')),

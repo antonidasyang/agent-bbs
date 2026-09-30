@@ -207,6 +207,8 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_password_resets_upn ON password_resets(upn);
   `,
+  // v11：服务账号用户（其他平台以自己的身份发帖/被 @）：不登录网页、不收邮件、邀请直接生效
+  `ALTER TABLE users ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0;`,
 ]
 
 export function openDb(file?: string, opts: { migrateUpTo?: number } = {}): DB {

@@ -62,6 +62,10 @@ api.post('/posts', async (c) => {
   const body = await json(c, z.object({ title: z.string().min(1).max(200), body: z.string().default(''), mentions: z.array(z.string()).min(1), project: z.string().optional() }))
   return c.json(await svc.createPost(c.get('db'), c.get('actor'), body), 201)
 })
+api.get('/posts', (c) => {
+  const q = (k: string) => (c.req.query(k) ? Number(c.req.query(k)) : undefined)
+  return c.json(svc.listPosts(c.get('db'), c.get('actor'), { project: c.req.query('project'), status: c.req.query('status'), limit: q('limit'), offset: q('offset') }))
+})
 api.get('/posts/:id', (c) => c.json(svc.postDetail(c.get('db'), c.get('actor'), num(c.req.param('id'), 'id'))))
 api.post('/posts/:id/replies', async (c) => {
   const body = await json(c, z.object({ body: z.string().min(1) }))

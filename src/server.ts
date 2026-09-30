@@ -15,6 +15,8 @@ import { handleMcp } from './mcp/server.js'
 import { AppError, unauthorized } from './core/errors.js'
 import { installMailNotifier } from './mail/index.js'
 import { cleanupSessions } from './auth/session.js'
+import { svcEnabled } from './auth/introspect.js'
+import { ensureServiceUser } from './core/users.js'
 import { storageDescription } from './storage/index.js'
 import { auditDescription } from './audit/index.js'
 import { backupDescription, scheduleBackups } from './backup/index.js'
@@ -25,6 +27,17 @@ console.log(`[storage] 附件存储：${storageDescription()}`)
 console.log(`[audit] 发帖安全审计：${auditDescription()}`)
 console.log(`[backup] 每日备份（${config.backup.hour < 0 ? '定时已关' : `每天 ${config.backup.hour} 点`}）：${backupDescription()}`)
 scheduleBackups(db)
+if (svcEnabled()) {
+  // 白名单里的服务账号先建成用户，首次调用前就能被 @、被邀请进手动项目
+  for (const id of config.svc.allowedClients) {
+    try {
+      ensureServiceUser(db, id)
+    } catch (e) {
+      console.error(`[svc] 白名单里的 ${id} 无法建成服务账号用户：${(e as Error).message}`)
+    }
+  }
+  console.log(`[svc] 服务账号接入：已开启，白名单 ${config.svc.allowedClients.length} 个 clientId，校验走 ${config.svc.introspectUrl}`)
+} else console.log('[svc] 服务账号接入：未开启（SVC_INTROSPECT_KEY 为空）')
 setInterval(() => cleanupSessions(db), 6 * 3600e3).unref()
 
 const app = new Hono<Env>()
@@ -54,7 +67,7 @@ app.route('/auth', auth)
 app.route('/api/v1', api)
 
 app.all('/mcp', async (c) => {
-  const actor = actorFromToken(c, db)
+  const actor = await actorFromToken(c, db)
   if (!actor) throw unauthorized('MCP 需要 Authorization: Bearer <token>')
   return handleMcp(c, db, actor)
 })

@@ -2,7 +2,7 @@ import type { DB } from '../db/index.js'
 import { now } from '../db/index.js'
 import { config } from '../config.js'
 import type { User, Agent } from './types.js'
-import { badRequest } from './errors.js'
+import { badRequest, forbidden } from './errors.js'
 
 export function getUser(db: DB, upn: string): User | undefined {
   return db.prepare('SELECT * FROM users WHERE upn = ?').get(upn.toLowerCase()) as User | undefined
@@ -22,6 +22,27 @@ export function upsertUserFromCas(
      ON CONFLICT(upn) DO UPDATE SET display_name=excluded.display_name, mail=COALESCE(excluded.mail, users.mail),
        department=COALESCE(excluded.department, users.department), last_login_at=excluded.last_login_at`,
   ).run(upn, u.displayName, u.mail ?? null, u.department ?? null, now())
+  return getUser(db, upn)!
+}
+
+const CLIENT_ID_RE = /^[a-z0-9][a-z0-9._-]{1,63}$/
+
+/**
+ * 服务账号（其他平台）在 BBS 里就是一个用户：upn = clientId@域，姓名 = 服务账号名称。
+ * 白名单里的启动时先建好（这样首次调用前就能被 @、被邀请），每次校验通过再用令牌里的 name 刷新姓名。
+ */
+export function ensureServiceUser(db: DB, clientId: string, name?: string | null): User {
+  const id = clientId.trim().toLowerCase()
+  if (!CLIENT_ID_RE.test(id)) throw forbidden(`服务账号 clientId 格式不支持：${clientId}`)
+  const upn = `${id}@${config.accountDomain}`
+  const existing = getUser(db, upn)
+  // 真人账号（登录过 / 有密码）不能被同名 clientId 顶掉
+  if (existing && !existing.is_service && (existing.last_login_at || existing.password_hash)) throw forbidden(`clientId ${id} 与已有用户账号重名，无法作为服务账号接入`)
+  const displayName = name?.trim().slice(0, 64) || (existing?.is_service ? existing.display_name : id)
+  if (!existing) db.prepare('INSERT INTO users(upn, display_name, mail, is_service) VALUES (?,?,NULL,1)').run(upn, displayName)
+  else if (!existing.is_service || existing.display_name !== displayName) db.prepare('UPDATE users SET display_name = ?, mail = NULL, is_service = 1 WHERE upn = ?').run(displayName, upn)
+  // 平台点不了邀请链接：成为服务账号之前（还是占位用户时）收到的邀请直接生效；之后的邀请在 inviteMembers 里即时加入
+  if (existing && !existing.is_service) db.prepare("UPDATE project_members SET status = 'joined', joined_at = ?, invite_token = NULL WHERE user_upn = ? AND status = 'invited'").run(now(), upn)
   return getUser(db, upn)!
 }
 

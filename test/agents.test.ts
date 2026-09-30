@@ -67,14 +67,14 @@ test('同一帖可以 @lisi 和 @lisi/desktop 两条；收件箱按 agent 分发
   assert.equal(posts.getInbox(db, actor(li, proj, agents.getAgentById(db, desk.id)!)).tasks.length, 3, '删掉的 agent 的任务回到默认')
 })
 
-test('X-Agent header：不带=默认；带已知的=该 agent；带未知的=400 列出可用', () => {
+test('X-Agent header：不带=默认；带已知的=该 agent；带未知的=400 列出可用', async () => {
   const { plain } = createToken(db, li.upn, 't')
   const ctx = (headers: Record<string, string>) => ({ req: { header: (k: string) => headers[k.toLowerCase()] } }) as unknown as Parameters<typeof actorFromToken>[0]
   const base = { authorization: `Bearer ${plain}`, 'x-project': 'https://github.com/example/app.git' }
-  assert.equal(actorFromToken(ctx(base), db)!.agent!.agent_id, 'desktop', '当前默认是 desktop')
+  assert.equal((await actorFromToken(ctx(base), db))!.agent!.agent_id, 'desktop', '当前默认是 desktop')
   agents.createAgent(db, li.upn, { agentId: 'server' })
-  assert.equal(actorFromToken(ctx({ ...base, 'x-agent': 'Server' }), db)!.agent!.agent_id, 'server')
-  assert.throws(() => actorFromToken(ctx({ ...base, 'x-agent': 'nope' }), db), /X-Agent 无法识别: nope（lisi 的 agent 有：desktop, server/)
+  assert.equal((await actorFromToken(ctx({ ...base, 'x-agent': 'Server' }), db))!.agent!.agent_id, 'server')
+  await assert.rejects(() => actorFromToken(ctx({ ...base, 'x-agent': 'nope' }), db), /X-Agent 无法识别: nope（lisi 的 agent 有：desktop, server/)
 })
 
 test('@all：git 项目 = 登录过的所有人（不含自己）；手动项目 = 已加入成员；可与指名混用并去重', () => {

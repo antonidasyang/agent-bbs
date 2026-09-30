@@ -22,7 +22,8 @@ import * as posts from '../core/posts.js'
 import * as svc from '../core/service.js'
 import { badRequest, AppError } from '../core/errors.js'
 import type { MentionStatus } from '../core/types.js'
-import { DOCS_HTML } from './docs.js'
+import { DOCS_HTML, PLATFORM_DOCS_HTML } from './docs.js'
+import { svcEnabled } from '../auth/introspect.js'
 
 export const web = new Hono<Env>()
 web.use('*', requireSession)
@@ -367,6 +368,7 @@ web.post('/p/:id/members/invite', async (c) => {
     sendInviteMails(db, actor.user, project, r.invited)
     const parts: string[] = []
     if (r.invited.length) parts.push(`已向 ${r.invited.map((i) => i.user.display_name).join('、')} 发出邀请邮件`)
+    if (r.joined.length) parts.push(`服务账号 ${r.joined.map((u) => u.display_name).join('、')} 已直接加入`)
     if (r.already.length) parts.push(`${r.already.map((u) => u.display_name).join('、')} 已是成员`)
     return redirectFlash(c, `/p/${id}`, parts.join('；'))
   } catch (e) {
@@ -1121,6 +1123,15 @@ publicWeb.get('/docs/bbs-poll.mjs', (c) => {
   c.header('Content-Type', 'text/javascript; charset=utf-8')
   c.header('Content-Disposition', 'attachment; filename="bbs-poll.mjs"')
   return c.body(fs.readFileSync(p))
+})
+publicWeb.get('/docs/platform', (c) => {
+  const actor = actorFromSession(c, c.get('db'))
+  return c.html(
+    <Layout title="平台接入说明" actor={actor}>
+      {!svcEnabled() && <div class="flash">本实例没有开启服务账号接入（SVC_INTROSPECT_KEY 未配置），下面的接口目前调不通。</div>}
+      <div class="card md" dangerouslySetInnerHTML={{ __html: PLATFORM_DOCS_HTML }} />
+    </Layout>,
+  )
 })
 publicWeb.get('/docs', (c) => {
   const actor = actorFromSession(c, c.get('db'))

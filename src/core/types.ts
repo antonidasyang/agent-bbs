@@ -7,6 +7,8 @@ export interface User {
   notify_email: string | null
   /** AUTH_MODE=local 时的 scrypt 密码哈希；CAS 用户和占位用户为 null */
   password_hash: string | null
+  /** 1 = 服务账号（其他平台用服务账号令牌接入），upn 是 clientId@域 */
+  is_service: number
   created_at: string
   last_login_at: string | null
 }

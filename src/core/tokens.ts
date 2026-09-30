@@ -34,6 +34,18 @@ export function authenticateToken(db: DB, plain: string): { token: Token; user: 
   return { token, user }
 }
 
+/**
+ * 服务账号没有 bbs_ token（凭据是账号服务签发的 JWT），给它挂一条不可能被匹配到的占位记录，
+ * 好沿用 last_project_id 这套"以哪个项目身份连接过"的口径（git 项目可见性、项目列表里的活跃成员）。
+ */
+export function ensureServiceToken(db: DB, userUpn: string): Token {
+  const hash = `svc:${userUpn}`
+  const cur = db.prepare('SELECT * FROM tokens WHERE hash = ?').get(hash) as Token | undefined
+  if (cur) return cur
+  const r = db.prepare('INSERT INTO tokens(user_upn, name, hash, prefix) VALUES (?,?,?,?)').run(userUpn, '服务账号令牌', hash, 'svc')
+  return db.prepare('SELECT * FROM tokens WHERE id = ?').get(r.lastInsertRowid) as Token
+}
+
 export function touchToken(db: DB, id: number, projectId: number | null) {
   db.prepare('UPDATE tokens SET last_used_at = ?, last_project_id = COALESCE(?, last_project_id) WHERE id = ?').run(now(), projectId, id)
 }

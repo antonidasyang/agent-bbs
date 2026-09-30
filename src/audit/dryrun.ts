@@ -21,7 +21,7 @@ async function main() {
     process.exit(2)
   }
   const db = openDb(':memory:')
-  const actor: Actor = { user: { upn: 'dryrun@example.com', display_name: 'dryrun', mail: null, department: null, notify_email: null, password_hash: null, created_at: '', last_login_at: null }, isAdmin: false, project: null, via: 'token' }
+  const actor: Actor = { user: { upn: 'dryrun@example.com', display_name: 'dryrun', mail: null, department: null, notify_email: null, password_hash: null, is_service: 0, created_at: '', last_login_at: null }, isAdmin: false, project: null, via: 'token' }
   console.error(`[dryrun] ${auditDescription()}；prompt: ${getAuditPrompt(db).custom ? '自定义' : '内置默认'}（注意：干跑用的是内存库，线上超管改过的 prompt 不会带进来，除非把 DATA_DIR 指到线上数据目录）`)
 
   const rl = readline.createInterface({ input: process.stdin })

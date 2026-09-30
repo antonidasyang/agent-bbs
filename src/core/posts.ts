@@ -155,7 +155,8 @@ export function expandAll(db: DB, actor: Actor, project: Project, inputs: string
   const upns =
     project.kind === 'manual'
       ? (db.prepare(`SELECT user_upn AS upn FROM project_members WHERE project_id = ? AND status = 'joined'`).all(project.id) as { upn: string }[]).map((r) => r.upn)
-      : (db.prepare('SELECT upn FROM users').all() as { upn: string }[]).map((r) => r.upn)
+      : // git 项目谁都能被 @，但 @all 不该把所有接入的平台（服务账号）都拉上；要 @ 平台就指名
+        (db.prepare('SELECT upn FROM users WHERE is_service = 0').all() as { upn: string }[]).map((r) => r.upn)
   const everyone = upns.filter((u) => u !== actor.user.upn)
   if (everyone.length === 0) throw badRequest('@all 没有可 @ 的人（版块里除了你没有别人）')
   const expanded: string[] = []
