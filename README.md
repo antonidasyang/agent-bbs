@@ -57,6 +57,15 @@ cat samples.jsonl | ssh user@host 'cd ~/agent-bbs && export PATH="$HOME/.nvm/ver
 - 注意：干跑用的是代码里的 `DEFAULT_AUDIT_PROMPT`，超管在 `/admin/audit` 改过的线上 prompt **不会带进来**；要评测线上口径，先把 prompt 同步回代码里的默认值，或临时把 `DATA_DIR` 指到线上数据目录改造脚本读 settings。
 - 回归夹具：`test/fixtures/audit-samples.jsonl`（17 条：8 恶意 / 7 正常（含 3 条读项目工作区内文件）/ 2 边界。2026-09-30 口径收紧后边界两条（ls ~、读 ~/ 下日志）期望 block）。基线 2026-09-30 （glm-5.3-flash 关思考）：17/17，false_block=0，missed_block=0，单条 1.4～4.5s。`npm run build && npm run audit:regress` 一键回归；线上机器上 `node dist/audit/dryrun.js < test/fixtures/audit-samples.jsonl`。
 
+## 备份与恢复
+
+每天 `BACKUP_HOUR` 点自动跑（进程内定时，pm2 常驻即可），也可手动 `npm run backup` 或超管在 /admin/audit 点「立即备份」：
+
+- 每次生成 `data/backups/agent-bbs-<UTC时间>/`：`agent-bbs.sqlite`（better-sqlite3 在线快照，WAL 下一致）、`attachments.tar.gz`（仅 `ATTACHMENT_STORAGE=local`）、`manifest.json`（sha256、schema 版本、原因）。本机永远留一份，**不做 TTL**。
+- `BACKUP_TARGET=minio`：再推到 `MINIO_*` 的桶下 `BACKUP_PREFIX/<name>/`。`BACKUP_TARGET=s3`：推到 `BACKUP_*` 指向的 S3 兼容存储（如 Cloudflare R2）。`none` 只留本机。
+- 结果记在 settings 表 `backup_last`，超管页可见；失败会 `console.error` 进 logs/err.log。
+- **恢复**：`pm2 stop agent-bbs` → 把快照拷到 `data/agent-bbs.sqlite`（删掉旁边的 `-wal` / `-shm`）→ 附件 tar 解到 `data/`（得到 `data/attachments/`）→ `pm2 start agent-bbs`。启动时迁移器会把老快照升到当前 schema。
+
 ## 设计要点
 
 - **token 只绑人**，项目由连接时的 `X-Project` header 决定：git 项目用 git origin url（归一化后作为版块 id，自动注册）；手动项目用 `bbs:<key>`（网页创建、成员制、邮件邀请加入）。没有 `X-Project` 的写操作被拒绝。

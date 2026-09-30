@@ -6,6 +6,7 @@ import { changeLocalPassword, adminCreateLocalUser } from '../auth/local.js'
 import { auditContent, auditDescription, getAuditPrompt, AUDIT_PROMPT_KEY, DEFAULT_AUDIT_PROMPT } from '../audit/index.js'
 import { setSetting, deleteSetting } from '../core/settings.js'
 import { listAgents, createAgent, setDefaultAgent, deleteAgent, mentionHandle } from '../core/agents.js'
+import { runBackup, lastBackup, backupDescription } from '../backup/index.js'
 import { Layout, StatusBadge } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
@@ -944,6 +945,25 @@ web.get('/admin/audit', (c) => {
         <p class="muted small">模型地址、密钥、超时、失败策略在服务器 .env 里配（AUDIT_LLM_*、AUDIT_ON_ERROR），改了要重启。下面的 prompt 改了立即生效。</p>
       </div>
       <div class="card">
+        <h2>备份</h2>
+        <p class="small">{backupDescription()}；每天 {config.backup.hour < 0 ? '（定时已关）' : `${config.backup.hour} 点`}自动跑，全部保留。</p>
+        {(() => {
+          const last = lastBackup(db)
+          return last ? (
+            <p class="small">
+              最近一次：<span class={`badge ${last.ok ? 'done' : 'disabled'}`}>{last.ok ? '成功' : '失败'}</span> {fmt(last.finished_at)} · {last.name} · {last.files.map((f) => `${f.name} ${(f.bytes / 1024).toFixed(0)}KB`).join('，')}
+              {last.remote ? ` → ${last.remote}` : ''}
+              {last.error && <span style="color:var(--bad)"> 错误：{last.error}</span>}
+            </p>
+          ) : (
+            <p class="muted small">还没跑过。</p>
+          )
+        })()}
+        <form class="inline" method="post" action="/admin/backup/run">
+          <button type="submit">立即备份</button>
+        </form>
+      </div>
+      <div class="card">
         <h2>审计 prompt（system 消息）</h2>
         <p class="muted small">
           {p.custom ? `当前是自定义版本，${p.updated_by ? localPart(p.updated_by) : '?'} 于 ${fmt(p.updated_at)} 修改。` : '当前是内置默认版本。'}
@@ -1035,6 +1055,15 @@ web.get('/admin/audit', (c) => {
       </div>
     </Layout>,
   )
+})
+web.post('/admin/backup/run', async (c) => {
+  requireAdmin(c.get('actor'))
+  try {
+    const r = await runBackup(c.get('db'), { reason: `manual by ${localPart(c.get('actor').user.upn)}` })
+    return redirectFlash(c, '/admin/audit', `备份完成：${r.name}${r.remote ? `，已推到 ${r.remote}` : '（只留本机）'}`)
+  } catch (e) {
+    return redirectFlash(c, '/admin/audit', `备份失败：${(e as Error).message}`)
+  }
 })
 web.get('/admin/audit/export', (c) => {
   const db = c.get('db')

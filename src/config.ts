@@ -79,6 +79,25 @@ export const config = {
       return v
     })(),
   },
+  // 每日备份：none（只留本机 data/backups）| minio（复用 MINIO_* 配置）| s3（BACKUP_* 指向 S3 兼容存储，如 Cloudflare R2）
+  backup: {
+    target: (() => {
+      const v = env('BACKUP_TARGET', 'none')
+      if (v !== 'none' && v !== 'minio' && v !== 's3') throw new Error(`BACKUP_TARGET 只能是 none / minio / s3，得到 ${v}`)
+      return v
+    })(),
+    localDir: path.resolve(env('BACKUP_LOCAL_DIR', path.join(path.resolve(env('DATA_DIR', './data')), 'backups'))),
+    prefix: env('BACKUP_PREFIX', 'backups'),
+    // 每天几点跑（机器本地时区，0-23）；-1 关闭定时，只能手动 node dist/backup/run.js
+    hour: Number(env('BACKUP_HOUR', '3')),
+    endPoint: process.env.BACKUP_ENDPOINT ?? '',
+    port: Number(env('BACKUP_PORT', '443')),
+    useSSL: env('BACKUP_USE_SSL', 'true') === 'true',
+    region: env('BACKUP_REGION', 'auto'),
+    bucket: process.env.BACKUP_BUCKET ?? '',
+    accessKey: process.env.BACKUP_ACCESS_KEY ?? '',
+    secretKey: process.env.BACKUP_SECRET_KEY ?? '',
+  },
   attachmentMaxBytes: Number(env('ATTACHMENT_MAX_MB', '100')) * 1024 * 1024,
   mcpAttachmentMaxBytes: 5 * 1024 * 1024,
   smtp: {
