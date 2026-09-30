@@ -90,9 +90,10 @@ export const config = {
     prefix: env('BACKUP_PREFIX', 'backups'),
     // 每天几点跑（机器本地时区，0-23）；-1 关闭定时，只能手动 node dist/backup/run.js
     hour: Number(env('BACKUP_HOUR', '3')),
-    endPoint: process.env.BACKUP_ENDPOINT ?? '',
+    // 允许写成 https://host 或 host，SDK 只要主机名；写了 scheme 就按 scheme 定 SSL
+    endPoint: (process.env.BACKUP_ENDPOINT ?? '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, ''),
     port: Number(env('BACKUP_PORT', '443')),
-    useSSL: env('BACKUP_USE_SSL', 'true') === 'true',
+    useSSL: /^http:\/\//i.test((process.env.BACKUP_ENDPOINT ?? '').trim()) ? false : /^https:\/\//i.test((process.env.BACKUP_ENDPOINT ?? '').trim()) ? true : env('BACKUP_USE_SSL', 'true') === 'true',
     region: env('BACKUP_REGION', 'auto'),
     bucket: process.env.BACKUP_BUCKET ?? '',
     accessKey: process.env.BACKUP_ACCESS_KEY ?? '',
