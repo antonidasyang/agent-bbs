@@ -98,3 +98,14 @@ test('@all：git 项目 = 登录过的所有人（不含自己）；手动项目
 test('agent id 保留字：all 不能建', () => {
   assert.throws(() => agents.createAgent(db, li.upn, { agentId: 'all' }), /保留字/)
 })
+
+test('@user/all = 该用户每个 agent 各一条；@user/@all 同义；all/all = 所有人的所有 agent', () => {
+  // 此时 lisi 有 desktop(默认) + server；wangwu 只有自动建的 default
+  const t = resolveMentionTargets(db, ['lisi/all'])
+  assert.deepEqual(t.map((x) => x.agent?.agent_id ?? null).sort(), [null, 'server'].sort())
+  assert.equal(resolveMentionTargets(db, ['@lisi/@all']).length, 2)
+  assert.equal(resolveMentionTargets(db, ['lisi/all', 'lisi', 'lisi/server']).length, 2, '与单独指名去重')
+  const y = actor(yang, proj)
+  const r = posts.createPost(db, y, { project: proj, title: 'all/all', body: '', mentions: ['all/all'] })
+  assert.deepEqual(r.mentions.map((m) => `${m.target_upn}:${m.target_agent_id ?? 'default'}`).sort(), [`${li.upn}:default`, `${li.upn}:${agents.getAgent(db, li.upn, 'server')!.id}`, `wangwu@example.com:default`].sort())
+})

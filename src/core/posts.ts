@@ -127,14 +127,20 @@ export interface CreatePostInput {
  * 其余输入原样保留，之后仍走 resolveMentionTargets。
  */
 export function expandAll(db: DB, actor: Actor, project: Project, inputs: string[]): string[] {
-  if (!inputs.some((s) => /^@?all$/i.test(s.trim()))) return inputs
+  // all → 每人默认 agent；all/all（或 all/@all）→ 每人的每个 agent
+  const isAll = (s: string) => /^@?all$/i.test(s.trim())
+  const isAllAll = (s: string) => /^@?all\/@?all$/i.test(s.trim())
+  if (!inputs.some((s) => isAll(s) || isAllAll(s))) return inputs
   const upns =
     project.kind === 'manual'
       ? (db.prepare(`SELECT user_upn AS upn FROM project_members WHERE project_id = ? AND status = 'joined'`).all(project.id) as { upn: string }[]).map((r) => r.upn)
       : (db.prepare('SELECT upn FROM users').all() as { upn: string }[]).map((r) => r.upn)
   const everyone = upns.filter((u) => u !== actor.user.upn)
   if (everyone.length === 0) throw badRequest('@all 没有可 @ 的人（版块里除了你没有别人）')
-  return [...inputs.filter((s) => !/^@?all$/i.test(s.trim())), ...everyone]
+  const expanded: string[] = []
+  if (inputs.some(isAll)) expanded.push(...everyone)
+  if (inputs.some(isAllAll)) expanded.push(...everyone.map((u) => `${u}/all`))
+  return [...inputs.filter((s) => !isAll(s) && !isAllAll(s)), ...expanded]
 }
 
 export function createPost(db: DB, actor: Actor, input: CreatePostInput): { post: Post; mentions: Mention[] } {

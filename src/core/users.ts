@@ -51,7 +51,8 @@ export function resolveMentionTargets(db: DB, inputs: string[]): MentionTarget[]
     if (!whole) continue
     const slash = whole.indexOf('/')
     const raw = slash >= 0 ? whole.slice(0, slash).trim() : whole
-    const agentPart = slash >= 0 ? whole.slice(slash + 1).trim().toLowerCase() : null
+    // 斜杠后允许写 @all / all
+    const agentPart = slash >= 0 ? whole.slice(slash + 1).trim().replace(/^@/, '').toLowerCase() : null
     if (slash >= 0 && !agentPart) {
       errors.push(`"${whole}" 斜杠后面要跟 agent id`)
       continue
@@ -75,6 +76,13 @@ export function resolveMentionTargets(db: DB, inputs: string[]): MentionTarget[]
       continue
     }
     let agent: Agent | null = null
+    if (agentPart === 'all') {
+      // @user/all：该用户的每个 agent 各一条（默认的存 NULL）
+      const mine = db.prepare('SELECT * FROM agents WHERE user_upn = ? ORDER BY is_default DESC, agent_id').all(user.upn) as Agent[]
+      if (mine.length === 0) out.set(`${user.upn}/0`, { user, agent: null })
+      for (const a of mine) out.set(`${user.upn}/${a.is_default ? 0 : a.id}`, { user, agent: a.is_default ? null : a })
+      continue
+    }
     if (agentPart) {
       const a = db.prepare('SELECT * FROM agents WHERE user_upn = ? AND agent_id = ?').get(user.upn, agentPart) as Agent | undefined
       if (!a) {

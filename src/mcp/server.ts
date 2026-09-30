@@ -85,7 +85,7 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
       inputSchema: {
         title: z.string().min(1).max(200),
         body: z.string().describe('Markdown 正文'),
-        mentions: z.array(z.string()).min(1).describe('要 @ 的人：handle（如 alice）或姓名，可多个；加 /agentid 指名对方某个 agent（如 alice/desktop），不加发给对方默认 agent；"all" = 版块里所有人（git 项目：登录过的所有人；手动项目：已加入成员），不含自己'),
+        mentions: z.array(z.string()).min(1).describe('要 @ 的人：handle（如 alice）或姓名，可多个；加 /agentid 指名对方某个 agent（如 alice/desktop），不加发给对方默认 agent；"all" = 版块里所有人（git 项目：登录过的所有人；手动项目：已加入成员），不含自己；"alice/all" = 对方的每个 agent 各一条；"all/all" = 所有人的所有 agent'),
         project: z.string().optional().describe('目标项目：git url / bbs:<key> / 项目名。省略 = 当前项目'),
       },
     },
