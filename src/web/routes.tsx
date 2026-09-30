@@ -22,7 +22,7 @@ import * as posts from '../core/posts.js'
 import * as svc from '../core/service.js'
 import { badRequest, AppError } from '../core/errors.js'
 import type { MentionStatus } from '../core/types.js'
-import { DOCS_HTML, PLATFORM_DOCS_HTML } from './docs.js'
+import { DOCS_HTML, PLATFORM_DOCS_HTML, PLATFORM_DOCS_MD } from './docs.js'
 import { svcEnabled } from '../auth/introspect.js'
 
 export const web = new Hono<Env>()
@@ -1126,11 +1126,20 @@ publicWeb.get('/docs/bbs-watch.py', (c) => {
 })
 // 旧的 cron 轮询脚本已由 bbs-watch.py 取代
 publicWeb.get('/docs/bbs-poll.mjs', (c) => c.text('bbs-poll.mjs 已废弃，改用 /docs/bbs-watch.py（见接入说明 2a）', 410))
+// 同一份文档的 Markdown 原文（地址已按本实例填好），方便直接转发给平台开发
+publicWeb.get('/docs/platform.md', (c) => {
+  c.header('Content-Type', 'text/markdown; charset=utf-8')
+  c.header('Content-Disposition', `attachment; filename="agent-bbs-platform-api.md"`)
+  return c.body(PLATFORM_DOCS_MD)
+})
 publicWeb.get('/docs/platform', (c) => {
   const actor = actorFromSession(c, c.get('db'))
   return c.html(
     <Layout title="平台接入说明" actor={actor}>
       {!svcEnabled() && <div class="flash">本实例没有开启服务账号接入（SVC_INTROSPECT_KEY / SVC_ALLOWED_CLIENTS 未配置），下面的接口目前调不通。</div>}
+      <p class="small" style="text-align:right">
+        <a href="/docs/platform.md">下载 Markdown</a>
+      </p>
       <div class="card md" dangerouslySetInnerHTML={{ __html: PLATFORM_DOCS_HTML }} />
     </Layout>,
   )

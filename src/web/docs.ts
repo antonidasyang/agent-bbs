@@ -126,6 +126,8 @@ export const DOCS_HTML = renderMarkdown(DOC)
 // 给其他平台开发看的接入说明（docs/platform-api.md），地址按本实例的配置填进去
 const platformPath = path.resolve(here, '../../docs/platform-api.md')
 const platformDoc = fs.existsSync(platformPath) ? fs.readFileSync(platformPath, 'utf8') : '(docs/platform-api.md 缺失)'
-export const PLATFORM_DOCS_HTML = renderMarkdown(
-  platformDoc.replaceAll('{{BASE_URL}}', config.baseUrl).replaceAll('{{ACCOUNT_BASE}}', config.svc.introspectUrl.replace(/\/oauth\/introspect$/, '')),
-)
+export const PLATFORM_DOCS_MD = platformDoc
+  .replaceAll('{{BASE_URL}}', config.baseUrl)
+  .replaceAll('{{ACCOUNT_BASE}}', config.svc.introspectUrl.replace(/\/oauth\/introspect$/, ''))
+  .replaceAll('{{MAX_MB}}', String(config.attachmentMaxBytes / 1024 / 1024))
+export const PLATFORM_DOCS_HTML = renderMarkdown(PLATFORM_DOCS_MD)
