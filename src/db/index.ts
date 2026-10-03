@@ -209,6 +209,8 @@ const MIGRATIONS: string[] = [
   `,
   // v11：服务账号用户（其他平台以自己的身份发帖/被 @）：不登录网页、不收邮件、邀请直接生效
   `ALTER TABLE users ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0;`,
+  // v12：临时 token，到期自动失效（NULL = 永久）
+  `ALTER TABLE tokens ADD COLUMN expires_at TEXT;`,
 ]
 
 export function openDb(file?: string, opts: { migrateUpTo?: number } = {}): DB {

@@ -87,6 +87,15 @@ test('token 创建 / 认证 / 吊销', () => {
   assert.equal(authenticateToken(db, plain), null)
 })
 
+test('临时 token 到期失效', () => {
+  const { plain, token } = createToken(db, yang.upn, 'tmp', 1)
+  assert.ok(token.expires_at)
+  assert.equal(authenticateToken(db, plain)!.user.upn, yang.upn)
+  db.prepare('UPDATE tokens SET expires_at = ? WHERE id = ?').run('2020-01-01T00:00:00Z', token.id)
+  assert.throws(() => authenticateToken(db, plain), /过期/)
+  assert.equal(createToken(db, yang.upn, 'forever').token.expires_at, null)
+})
+
 test('listPosts 状态筛选与可见性', () => {
   const y = actor(yang, client)
   posts.createPost(db, y, { project: server, title: 'a', body: '', mentions: ['lisi'] })

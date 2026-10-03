@@ -51,6 +51,7 @@ export interface Token {
   last_used_at: string | null
   last_project_id: number | null
   revoked_at: string | null
+  expires_at: string | null
 }
 
 export type MentionStatus = 'pending' | 'in_progress' | 'done' | 'disabled'

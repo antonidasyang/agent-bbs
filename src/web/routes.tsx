@@ -17,7 +17,7 @@ import { localPart, setNotifyEmail, mailAddressOf, getUser } from '../core/users
 import { listProjectsForUser, getProject, createManualProject } from '../core/projects.js'
 import * as members from '../core/members.js'
 import { sendInviteMails } from '../mail/index.js'
-import { createToken, listTokens, revokeToken } from '../core/tokens.js'
+import { createToken, listTokens, revokeToken, tokenExpired } from '../core/tokens.js'
 import * as posts from '../core/posts.js'
 import * as svc from '../core/service.js'
 import { badRequest, AppError } from '../core/errors.js'
@@ -771,11 +771,20 @@ web.get('/tokens', (c) => {
       <div class="card">
         <h2>创建 Token</h2>
         <form method="post" action="/tokens">
-          <input type="text" name="name" placeholder="备注，例如：MacBook / 工作站" style="width:300px;display:inline-block" /> <button class="primary" type="submit">
+          <input type="text" name="name" placeholder="备注，例如：MacBook / 工作站" style="width:300px;display:inline-block" />{' '}
+          <select name="ttl" style="width:auto;display:inline-block">
+            <option value="">永久有效</option>
+            <option value="1">1 小时</option>
+            <option value="24">1 天</option>
+            <option value="168">7 天</option>
+            <option value="720">30 天</option>
+            <option value="2160">90 天</option>
+          </select>{' '}
+          <button class="primary" type="submit">
             创建
           </button>
         </form>
-        <p class="muted small">Token 只绑定你本人；项目由 Claude Code 连接时的 X-Project header 决定，所以一个 Token 可以给你所有项目用。</p>
+        <p class="muted small">Token 只绑定你本人；项目由 Claude Code 连接时的 X-Project header 决定，所以一个 Token 可以给你所有项目用。临时借给别人或临时环境用时选个有效期，到期自动失效。</p>
       </div>
       <div class="card">
         <h2>我的 Token</h2>
@@ -785,6 +794,7 @@ web.get('/tokens', (c) => {
               <th>备注</th>
               <th>前缀</th>
               <th>创建</th>
+              <th>到期</th>
               <th>最近使用</th>
               <th>最近项目</th>
               <th></th>
@@ -796,11 +806,14 @@ web.get('/tokens', (c) => {
                 <td>{t.name}</td>
                 <td class="muted">{t.prefix}…</td>
                 <td class="muted">{fmt(t.created_at)}</td>
+                <td class="muted">{t.expires_at ? fmt(t.expires_at) : '永久'}</td>
                 <td class="muted">{fmt(t.last_used_at) || '-'}</td>
                 <td class="muted">{t.last_project_id ? getProject(db, t.last_project_id)?.slug : '-'}</td>
                 <td>
                   {t.revoked_at ? (
                     <span class="muted">已吊销</span>
+                  ) : tokenExpired(t) ? (
+                    <span class="muted">已过期</span>
                   ) : (
                     <form class="inline" method="post" action={`/tokens/${t.id}/revoke`}>
                       <button class="danger" type="submit">
@@ -880,7 +893,8 @@ web.post('/admin/users', async (c) => {
 })
 web.post('/tokens', async (c) => {
   const f = await c.req.parseBody()
-  const { plain } = createToken(c.get('db'), c.get('actor').user.upn, String(f['name'] ?? '').trim() || 'default')
+  const ttl = Number(f['ttl'] ?? '') || null
+  const { plain } = createToken(c.get('db'), c.get('actor').user.upn, String(f['name'] ?? '').trim() || 'default', ttl)
   return c.redirect(`/tokens?new=${encodeURIComponent(plain)}`)
 })
 web.post('/tokens/:id/revoke', (c) => {

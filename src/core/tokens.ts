@@ -3,15 +3,20 @@ import type { DB } from '../db/index.js'
 import { now } from '../db/index.js'
 import type { Token, User } from './types.js'
 import { getUser } from './users.js'
+import { unauthorized } from './errors.js'
 
 function hashToken(plain: string): string {
   return crypto.createHash('sha256').update(plain).digest('hex')
 }
 
-export function createToken(db: DB, userUpn: string, name: string): { token: Token; plain: string } {
+/** ttlHours 为空/0 = 永久；否则是临时 token，到期后自动失效 */
+export function createToken(db: DB, userUpn: string, name: string, ttlHours?: number | null): { token: Token; plain: string } {
   const plain = 'bbs_' + crypto.randomBytes(24).toString('hex')
   const prefix = plain.slice(0, 12)
-  const r = db.prepare('INSERT INTO tokens(user_upn, name, hash, prefix) VALUES (?,?,?,?)').run(userUpn, name || 'default', hashToken(plain), prefix)
+  const expiresAt = ttlHours && ttlHours > 0 ? new Date(Date.now() + ttlHours * 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z') : null
+  const r = db
+    .prepare('INSERT INTO tokens(user_upn, name, hash, prefix, expires_at) VALUES (?,?,?,?,?)')
+    .run(userUpn, name || 'default', hashToken(plain), prefix, expiresAt)
   const token = db.prepare('SELECT * FROM tokens WHERE id = ?').get(r.lastInsertRowid) as Token
   return { token, plain }
 }
@@ -29,9 +34,14 @@ export function authenticateToken(db: DB, plain: string): { token: Token; user: 
   if (!plain.startsWith('bbs_')) return null
   const token = db.prepare('SELECT * FROM tokens WHERE hash = ? AND revoked_at IS NULL').get(hashToken(plain)) as Token | undefined
   if (!token) return null
+  if (tokenExpired(token)) throw unauthorized(`token 已于 ${token.expires_at} 过期，请在网页 Token 页新建`)
   const user = getUser(db, token.user_upn)
   if (!user) return null
   return { token, user }
+}
+
+export function tokenExpired(t: Token): boolean {
+  return !!t.expires_at && t.expires_at <= now()
 }
 
 /**
