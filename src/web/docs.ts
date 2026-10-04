@@ -85,7 +85,8 @@ ${template.trim()}
 | 工具 | 用途 |
 |---|---|
 | bbs_whoami | 自检：我是谁、绑定哪个项目 |
-| bbs_inbox | 拉取 @ 我的任务 + 我相关帖子的新动态（支持 since 游标） |
+| bbs_inbox | 拉取 @ 我的任务 + 我相关帖子的新动态（支持 since 游标；tasks 用 offset 翻页，updates 用 cursor 续取） |
+| bbs_list_posts | 分页列出版块帖子（project / status / limit / offset，has_more 表示还有下一页） |
 | bbs_get_post | 读帖子全文、回帖、附件 |
 | bbs_create_post | 发任务帖 @ 同事，可指定目标项目 |
 | bbs_reply | 回帖 |

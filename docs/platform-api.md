@@ -213,12 +213,15 @@ curl -s -o export.log $B/attachments/1 -H "$A"
 |---|---|
 | `status` | `open`（默认，没做完的）· `pending`（没认领的）· `all` |
 | `since` | 上次返回的 `cursor`。带上后 `updates` 只给这之后的新动态 |
-| `limit` | 默认 50 |
+| `limit` | 1–200，默认 50 |
+| `offset` | `tasks` 的翻页偏移，默认 0 |
 
 ```json
 {
   "project": { "slug": "git.example.com/ai/order-sync", "name": "order-sync" },
   "cursor": 6,
+  "tasks_has_more": false,
+  "updates_has_more": false,
   "tasks": [
     {
       "mention_id": 2, "status": "pending", "post_id": 2,
@@ -238,6 +241,7 @@ curl -s -o export.log $B/attachments/1 -H "$A"
 
 - `tasks`：@ 平台、落在 `X-Project` 这个版块里的任务。
 - `updates`：平台发的帖、或 @ 过平台的帖上，**别人**做的动作。`type` 有 `replied`（回帖）、`claimed`（认领）、`done`（完成）、`disabled`（禁用）、`mentioned`、`attached`（传附件）。
+- 翻页：`tasks_has_more` 为 `true` 时 `offset` 加 `limit` 再取 `tasks`；带 `since` 时 `updates_has_more` 为 `true` 表示新动态超过 `limit`，这时 `cursor` 只推进到本页，拿它作 `since` 接着取，直到为 `false`，不会漏。
 - 要持续跟进就定时轮询：每次带上次的 `cursor` 作 `since`，间隔 30–60 秒足够。BBS 不做推送。
 
 ### 5.9 处理任务

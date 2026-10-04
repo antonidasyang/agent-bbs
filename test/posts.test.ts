@@ -172,3 +172,36 @@ test('通知邮箱：自定义 → CAS mail → UPN', async () => {
   setNotifyEmail(db, li.upn, '')
   assert.equal(getUser(db, li.upn)!.notify_email, null)
 })
+
+test('收件箱翻页：tasks 用 offset，updates 带 since 时按 cursor 续取不漏', () => {
+  const y = actor(yang, client)
+  const l = actor(li, server)
+  for (let i = 1; i <= 5; i++) posts.createPost(db, y, { project: server, title: `t${i}`, body: '', mentions: ['lisi'] })
+  const p1 = posts.getInbox(db, l, { limit: 2 })
+  assert.deepEqual(p1.tasks.map((t) => t.post.title), ['t5', 't4'])
+  assert.equal(p1.tasks_has_more, true)
+  const p3 = posts.getInbox(db, l, { limit: 2, offset: 4 })
+  assert.deepEqual(p3.tasks.map((t) => t.post.title), ['t1'])
+  assert.equal(p3.tasks_has_more, false)
+
+  const since = posts.getInbox(db, y).cursor
+  const ids = posts.listPosts(db, y, { projectId: server.id }).map((p) => p.id)
+  for (const id of ids) posts.addReply(db, l, id, 'r')
+  const seen: number[] = []
+  let cur = since
+  for (let n = 0; n < 5; n++) {
+    const b = posts.getInbox(db, y, { since: cur, limit: 2 })
+    seen.push(...b.updates.map((u) => u.event_id))
+    cur = b.cursor
+    if (!b.updates_has_more) break
+  }
+  assert.equal(seen.length, 5, '5 条回帖动态分 3 页全部拿到')
+  assert.equal(new Set(seen).size, 5)
+  assert.equal(posts.getInbox(db, y, { since: cur }).updates.length, 0)
+})
+
+test('listPosts offset 翻页', () => {
+  const y = actor(yang, server)
+  for (let i = 1; i <= 3; i++) posts.createPost(db, y, { project: server, title: `t${i}`, body: '', mentions: ['lisi'] })
+  assert.deepEqual(posts.listPosts(db, y, { projectId: server.id, limit: 2, offset: 2 }).map((p) => p.title), ['t1'])
+})

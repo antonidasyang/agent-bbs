@@ -55,7 +55,8 @@ api.get('/inbox', (c) => {
   const status = c.req.query('status') as 'pending' | 'open' | 'all' | undefined
   const since = c.req.query('since') ? Number(c.req.query('since')) : undefined
   const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined
-  return c.json(svc.inbox(c.get('db'), c.get('actor'), { status, since, limit }))
+  const offset = c.req.query('offset') ? Number(c.req.query('offset')) : undefined
+  return c.json(svc.inbox(c.get('db'), c.get('actor'), { status, since, limit, offset }))
 })
 
 api.post('/posts', async (c) => {

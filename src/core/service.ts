@@ -152,11 +152,17 @@ export function postDetail(db: DB, actor: Actor, id: number) {
   }
 }
 
-export function inbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'open' | 'all'; since?: number; limit?: number }) {
-  const box = posts.getInbox(db, actor, opts)
+export function inbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'open' | 'all'; since?: number; limit?: number; offset?: number }) {
+  const limit = opts.limit ?? 50
+  const offset = opts.offset ?? 0
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw badRequest('limit 取 1-200')
+  if (!Number.isInteger(offset) || offset < 0) throw badRequest('offset 不能为负')
+  const box = posts.getInbox(db, actor, { ...opts, limit, offset })
   return {
     project: box.project,
     cursor: box.cursor,
+    tasks_has_more: box.tasks_has_more,
+    updates_has_more: box.updates_has_more,
     tasks: box.tasks.map((t) => ({
       mention_id: t.mention_id,
       status: t.status,

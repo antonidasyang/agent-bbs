@@ -348,6 +348,10 @@ export interface Inbox {
   tasks: InboxTask[]
   updates: InboxUpdate[]
   cursor: number
+  /** tasks 还有下一页（offset 加 limit 再取） */
+  tasks_has_more: boolean
+  /** 带 since 时 updates 超过 limit：cursor 只推进到本页最后一条，再拿 since=cursor 取下一页 */
+  updates_has_more: boolean
 }
 
 /**
@@ -356,21 +360,25 @@ export interface Inbox {
  * updates：别人对"我发的（来源=当前项目）或 @我的（版块=当前项目）"帖子做的动作，since 之后的。
  * 没有绑定项目（人类会话 / 无 X-Project 的 token）时跨所有项目。
  */
-export function getInbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'open' | 'all'; since?: number; limit?: number } = {}): Inbox {
+export function getInbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'open' | 'all'; since?: number; limit?: number; offset?: number } = {}): Inbox {
   const status = opts.status ?? 'open'
   const projectId = actor.project?.id ?? null
   const agent = actor.agent ?? null
-  const params: Record<string, unknown> = { upn: actor.user.upn, projectId, since: opts.since ?? 0, limit: opts.limit ?? 50, agentId: agent?.id ?? null, agentIsDefault: agent?.is_default ? 1 : 0 }
+  const limit = opts.limit ?? 50
+  const since = opts.since ?? 0
+  // 多取一条判断还有没有下一页
+  const params: Record<string, unknown> = { upn: actor.user.upn, projectId, since, limit: limit + 1, offset: opts.offset ?? 0, agentId: agent?.id ?? null, agentIsDefault: agent?.is_default ? 1 : 0 }
   const statusSql = status === 'pending' ? `m.status = 'pending'` : status === 'open' ? `m.status IN ('pending','in_progress')` : '1=1'
   const agentSql = `(@agentId IS NULL OR m.target_agent_id = @agentId OR (m.target_agent_id IS NULL AND @agentIsDefault = 1))`
   const taskRows = db
     .prepare(
       `SELECT m.id AS mention_id, m.status, m.post_id FROM mentions m JOIN posts p ON p.id = m.post_id
        WHERE m.target_upn = @upn AND ${statusSql} AND (@projectId IS NULL OR p.project_id = @projectId) AND ${agentSql}
-       ORDER BY m.id DESC LIMIT @limit`,
+       ORDER BY m.id DESC LIMIT @limit OFFSET @offset`,
     )
     .all(params) as { mention_id: number; status: MentionStatus; post_id: number }[]
-  const tasks: InboxTask[] = taskRows.map((t) => ({ mention_id: t.mention_id, status: t.status, post: getPostSummary(db, t.post_id)! }))
+  const tasksHasMore = taskRows.length > limit
+  const tasks: InboxTask[] = taskRows.slice(0, limit).map((t) => ({ mention_id: t.mention_id, status: t.status, post: getPostSummary(db, t.post_id)! }))
 
   const updateRows = db
     .prepare(
@@ -383,15 +391,26 @@ export function getInbox(db: DB, actor: Actor, opts: { status?: 'pending' | 'ope
            OR (e.type != 'mentioned' AND EXISTS (SELECT 1 FROM mentions mm WHERE mm.post_id = p.id AND mm.target_upn = @upn)
                AND (@projectId IS NULL OR p.project_id = @projectId))
          )
-       ORDER BY e.id DESC LIMIT @limit`,
+       ORDER BY e.id ${since > 0 ? 'ASC' : 'DESC'} LIMIT @limit`,
     )
     .all(params) as InboxUpdate[]
   const maxEvent = (db.prepare('SELECT COALESCE(MAX(id),0) AS m FROM events').get() as { m: number }).m
+  // 带 since：从 since 往后按时间正序取，超出 limit 时 cursor 停在本页最后一条，下次接着取，不会漏；
+  // 不带 since（首次）：只给最近 limit 条，cursor 直接到最新
+  let updates = updateRows.slice(0, limit)
+  let cursor = maxEvent
+  const updatesHasMore = since > 0 && updateRows.length > limit
+  if (since > 0) {
+    if (updatesHasMore) cursor = updates[updates.length - 1].event_id
+    updates = updates.reverse() // 对外仍是新的在前
+  }
   return {
     project: actor.project ? { slug: actor.project.slug, name: actor.project.name } : null,
     tasks,
-    updates: updateRows,
-    cursor: maxEvent,
+    updates,
+    cursor,
+    tasks_has_more: tasksHasMore,
+    updates_has_more: updatesHasMore,
   }
 }
 

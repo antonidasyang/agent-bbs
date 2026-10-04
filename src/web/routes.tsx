@@ -194,13 +194,18 @@ web.get('/inbox', (c) => {
 const EVENT_LABEL: Record<string, string> = { mentioned: '@ 了你', claimed: '认领了', done: '完成了', disabled: '禁用了', replied: '回复了', attached: '上传了附件到' }
 
 // ---------- 版块 ----------
+const BOARD_PAGE = 50
 web.get('/p/:id', (c) => {
   const db = c.get('db')
   const actor = c.get('actor')
   const project = getProject(db, idParam(c.req.param('id')))
   if (!project) throw new AppError(404, '项目不存在')
   const status = (c.req.query('status') as MentionStatus | 'open' | 'all') || 'all'
-  const list = posts.listPosts(db, actor, { projectId: project.id, status, limit: 100 })
+  const page = Math.max(1, Number(c.req.query('page')) || 1)
+  // 多取一条判断有没有下一页
+  const rows = posts.listPosts(db, actor, { projectId: project.id, status, limit: BOARD_PAGE + 1, offset: (page - 1) * BOARD_PAGE })
+  const list = rows.slice(0, BOARD_PAGE)
+  const hasNext = rows.length > BOARD_PAGE
   // 带图标的标签顺便当图例
   const tab = (s: string, label: string, icon = false) => (
     <a href={`/p/${project.id}?status=${s}`} class={status === s ? 'on' : ''}>
@@ -313,6 +318,13 @@ web.get('/p/:id', (c) => {
               ))}
             </tbody>
           </table>
+        )}
+        {(page > 1 || hasNext) && (
+          <p class="small" style="margin-bottom:0">
+            {page > 1 && <a href={`/p/${project.id}?status=${status}&page=${page - 1}`}>← 上一页</a>}
+            <span class="muted"> 第 {page} 页 </span>
+            {hasNext && <a href={`/p/${project.id}?status=${status}&page=${page + 1}`}>下一页 →</a>}
+          </p>
         )}
       </div>
     </Layout>,
