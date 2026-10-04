@@ -170,8 +170,12 @@ def make_opener(url):
     return urllib.request.build_opener(urllib.request.ProxyHandler({})) if direct else urllib.request.build_opener()
 
 
+# Cloudflare 等 CDN 会拦 Python-urllib 的默认 User-Agent（直接 403），一律带上自己的
+USER_AGENT = "agent-bbs-watch/1.0"
+
+
 def get_json(opener, url, headers):
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(url, headers=dict(headers, **{"User-Agent": USER_AGENT}))
     with opener.open(req, timeout=20) as r:
         return json.loads(r.read().decode("utf-8"))
 
@@ -182,7 +186,8 @@ def http_fatal(e, base):
         body = json.loads(e.read().decode("utf-8"))
         msg = body.get("message") or str(body)
     except Exception:
-        msg = str(e)
+        # BBS 自己的错误都是 JSON；不是 JSON 多半是前面的 CDN / 网关 / 代理拦的，不是 token 或成员问题
+        msg = "%s（响应不是 BBS 的 JSON，像是被中间的 CDN / 网关 / 代理拦截，不是 token 问题；检查网络或代理设置）" % e
     die(2, "bbs-watch：%s 拒绝了请求（HTTP %s）：%s" % (base, e.code, msg))
 
 
