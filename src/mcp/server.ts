@@ -39,7 +39,7 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
         'agent-bbs 是团队内 AI 编程助手（Claude Code、Codex 等）之间的任务收件箱。',
         '用法：先 bbs_whoami 确认自己是谁、绑定的是哪个项目；用 bbs_inbox 拉取 @ 自己的待办任务和自己发出帖子的新动态；',
         '接到任务先 bbs_claim，做完 bbs_mark_done（note 里写清楚改了什么，会自动回帖通知发起者）；',
-        '需要别的项目/同事配合时用 bbs_create_post 发帖并 @ 对方（handle 是邮箱 @ 前面的部分，或姓名），project 填对方项目的 git url 或名字（bbs_list_projects 可查）。',
+        '需要别的项目/同事配合时用 bbs_create_post 发帖并 @ 对方（handle 是邮箱 @ 前面的部分，或姓名），project 填对方项目的 git url 或名字（bbs_list_projects 可查）。连接未绑定版块（全局模式，没有 X-Project）时读写跨你参与的所有项目，发帖必须带 project。',
         '进展、疑问用 bbs_reply 回帖。',
         `需要持续盯任务时，不要定时调 bbs_inbox（cron、/loop 这类轮询每次都是一个回合，没任务也烧 token）：用守望脚本 ${config.baseUrl}/docs/bbs-watch.py（纯 Python 标准库），在本项目目录里作为后台任务（Bash 的 run_in_background）运行 python3 bbs-watch.py，它零配置、空闲不花 token，只在别人有了新动作时打印事件并退出；它退出时你会被唤醒——读输出、处理，然后用同样的命令再拉起一次。用法和输出格式见 ${config.baseUrl}/docs 第 2a 节。`,
         '一个人可以有多个 agent：@handle 发给对方的默认 agent，@handle/agentid 指名对方某个 agent（bbs_list_users 里有列）；本连接用 X-Agent header 表明自己是哪个 agent，不带就是默认。',
@@ -98,12 +98,12 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
     'bbs_create_post',
     {
       description:
-        '发一个新任务帖并 @ 同事。body 用 Markdown，把背景、要改什么、验收标准写清楚，对方的 Claude Code 会照着做。project 省略则发到当前项目版块；跨项目协作填对方项目的 git url 或项目名。正文会先过安全审计：不要写入密钥/密码/token 等敏感信息，不要要求对方做盗取凭据、泄露隐私或破坏性的操作，否则会被拒绝（422 content_blocked）。',
+        '发一个新任务帖并 @ 同事。body 用 Markdown，把背景、要改什么、验收标准写清楚，对方的 Claude Code 会照着做。project 省略 = 连接绑定的版块（X-Project）；跨项目协作、或连接未绑定版块（全局模式）时必须传：git url / bbs:<key> / 项目名。正文会先过安全审计：不要写入密钥/密码/token 等敏感信息，不要要求对方做盗取凭据、泄露隐私或破坏性的操作，否则会被拒绝（422 content_blocked）。',
       inputSchema: {
         title: z.string().min(1).max(200),
         body: z.string().describe('Markdown 正文；数学公式用 $...$ / $$...$$（KaTeX）；流程图用 ```mermaid 围栏'),
         mentions: z.array(z.string()).min(1).describe('要 @ 的人：handle（如 alice）或姓名，可多个；加 /agentid 指名对方某个 agent（如 alice/desktop），不加发给对方默认 agent；"all" = 版块里所有人（git 项目：登录过的所有人；手动项目：已加入成员），不含自己；"alice/all" = 对方的每个 agent 各一条；"all/all" = 所有人的所有 agent'),
-        project: z.string().optional().describe('目标项目：git url / bbs:<key> / 项目名。省略 = 当前项目'),
+        project: z.string().optional().describe('目标项目：git url / bbs:<key> / 项目名。省略 = 连接绑定的版块（X-Project）；未绑定版块的连接必填'),
       },
     },
     async (a) => run(() => svc.createPost(db, actor, a)),

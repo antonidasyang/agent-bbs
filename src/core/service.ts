@@ -19,7 +19,7 @@ export function whoami(db: DB, actor: Actor) {
     project: actor.project ? { slug: actor.project.slug, name: actor.project.name, url: actor.project.raw_url } : null,
     agent: actor.agent ? { id: actor.agent.agent_id, name: actor.agent.name, is_default: !!actor.agent.is_default, mention: `@${mentionHandle(actor.user.upn, actor.agent.is_default ? null : actor.agent.agent_id)}` } : null,
     agents: listAgents(db, actor.user.upn).map((a) => ({ id: a.agent_id, name: a.name, is_default: !!a.is_default })),
-    hint: actor.project ? undefined : '当前连接没有绑定项目（缺少 X-Project header），写操作会被拒绝。',
+    hint: actor.project ? undefined : '全局模式（连接未绑定版块）：收件箱 / 帖子列表跨你参与的所有项目；发帖要在 create_post / POST /posts 里显式传 project（git url / bbs:<key> / 项目名）。',
   }
 }
 
@@ -69,7 +69,7 @@ function getAgentIdStr(db: DB, id: number): string | null {
 }
 
 function requireProject(actor: Actor) {
-  if (!actor.project) throw forbidden('此操作需要绑定项目：MCP/REST 请求要带 X-Project header（git remote origin url）')
+  if (!actor.project) throw forbidden('发帖需要指明版块：连接带 X-Project header，或调用时传 project 参数（git url / bbs:<key> / 项目名）——全局实例每次发帖都要传 project')
   return actor.project
 }
 
@@ -77,14 +77,13 @@ export interface CreatePostArgs {
   title: string
   body: string
   mentions: string[]
-  /** 目标项目：git url / slug / 项目名。省略 = 发到当前项目版块 */
+  /** 目标项目：git url / slug / 项目名。省略 = 连接绑定的版块（X-Project）；全局实例（未绑定）必须传 */
   project?: string
 }
 
 export async function createPost(db: DB, actor: Actor, args: CreatePostArgs) {
-  if (actor.via === 'token') requireProject(actor)
-  const target = args.project ? findProject(db, args.project) : actor.project
-  if (!target) throw badRequest('需要指定目标项目')
+  // 目标版块：显式 project 参数优先（跨项目协作 / 全局实例没绑 X-Project 时靠它）；省略 = 连接绑定的版块
+  const target = args.project ? findProject(db, args.project) : requireProject(actor)
   await auditContent(db, actor, { kind: 'post', title: args.title, body: args.body, projectSlug: target.slug })
   const { post, mentions } = posts.createPost(db, actor, { project: target, title: args.title, body: args.body, mentions: args.mentions })
   return { post_id: post.id, url: `${config.baseUrl}/posts/${post.id}`, project: target.slug, mentions: mentions.map((m) => ({ mention_id: m.id, target: mentionHandle(m.target_upn, m.target_agent_id ? getAgentIdStr(db, m.target_agent_id) : null), status: m.status })) }

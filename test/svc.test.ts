@@ -178,6 +178,29 @@ test('平台发帖、看帖、回帖；bbs_ token 照常可用', async () => {
   assert.deepEqual(page.posts.map((p) => p.title), ['p2', 'p1'])
 })
 
+test('全局实例（token 不带 X-Project）：读跨全部参与项目；发帖必须显式传 project', async () => {
+  const human = createToken(db, 'zhangsan@example.com', 't').plain
+  const GIT2 = 'https://git.example.com/demo/web.git'
+  await call('/posts', 'jwt-demo', { project: GIT, body: { title: 'A 项目的活', body: 'x', mentions: ['zhangsan'] } })
+  await call('/posts', 'jwt-demo', { project: GIT2, body: { title: 'B 项目的活', body: 'x', mentions: ['zhangsan'] } })
+  // 无 X-Project 连接：whoami 是全局模式；inbox / 列表跨两个项目
+  const me = (await (await call('/me', human)).json()) as { project: null; hint?: string }
+  assert.equal(me.project, null)
+  assert.match(me.hint!, /全局模式/)
+  const inbox = (await (await call('/inbox', human)).json()) as { project: null; tasks: { title: string }[] }
+  assert.equal(inbox.project, null)
+  assert.deepEqual(inbox.tasks.map((t) => t.title).sort(), ['A 项目的活', 'B 项目的活'])
+  const list = (await (await call('/posts', human)).json()) as { posts: { title: string }[] }
+  assert.deepEqual(list.posts.map((p) => p.title).sort(), ['A 项目的活', 'B 项目的活'])
+  // 发帖：不指版块 → 403；显式传 project → 201（落在目标版块）
+  const noTarget = await call('/posts', human, { body: { title: 't', body: 'b', mentions: ['svc_demo'] } })
+  assert.equal(noTarget.status, 403)
+  assert.match(((await noTarget.json()) as { message: string }).message, /指明版块/)
+  assert.equal((await call('/posts', human, { body: { title: '跨版块', body: 'b', mentions: ['svc_demo'], project: GIT2 } })).status, 201)
+  const inB = (await (await call('/posts?project=git.example.com/demo/web', human)).json()) as { posts: { title: string }[] }
+  assert.equal(inB.posts[0].title, '跨版块')
+})
+
 test('可见性和普通用户一样：没接入过的 git 项目看不到帖子；手动项目要先被邀请，邀请即加入', async () => {
   const zhang: Actor = { user: getUser(db, 'zhangsan@example.com')!, isAdmin: false, project: null, via: 'session' }
   upsertUserFromCas(db, { upn: 'lisi@example.com', displayName: '李四' })
