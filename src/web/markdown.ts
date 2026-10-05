@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it'
 import sanitizeHtml from 'sanitize-html'
 import * as katexModule from '@vscode/markdown-it-katex'
+import hljs from 'highlight.js/lib/common'
 
 // 该包是 CJS 打包，ESM 下默认导出可能是 { default: fn } 的嵌套对象，运行时找到真正的函数
 type MdPlugin = (md: InstanceType<typeof MarkdownIt>, opts?: unknown) => void
@@ -13,8 +14,31 @@ function resolvePlugin(m: unknown): MdPlugin {
 const katexPlugin = resolvePlugin(katexModule)
 
 // 数学公式：$...$ 行内、$$...$$ 块级、```math 围栏。服务端用 KaTeX 渲染成 HTML（不出 MathML），CSS/字体由 /static/katex/ 本地提供
-const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+// 代码块：服务端 highlight.js 着色（只认带语言标注且 hljs 认识的，不猜语言），配色在 layout.tsx
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+  highlight: (code, lang) => {
+    const l = lang.toLowerCase()
+    if (!l || !hljs.getLanguage(l)) return ''
+    try { return hljs.highlight(code, { language: l, ignoreIllegals: true }).value } catch { return '' }
+  },
+})
 md.use(katexPlugin, { throwOnError: false, output: 'html', enableFencedBlocks: true, strict: false })
+
+// Mermaid 图：```mermaid 围栏，或没写语言但首行是 Mermaid 图类型关键字的围栏。服务端只输出转义后的源码
+// <pre class="mermaid">，浏览器端由 /static/mermaid/ 本地脚本渲染成 SVG（securityLevel strict），渲染失败就保留源码
+const MERMAID_FIRST_LINE_RE = /^\s*(flowchart|graph|sequenceDiagram|classDiagram(-v2)?|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|mindmap|timeline|sankey(-beta)?|xychart(-beta)?|block(-beta)?|packet(-beta)?|kanban|architecture(-beta)?|radar(-beta)?|treemap(-beta)?)\b/
+const defaultFence = md.renderer.rules.fence!
+md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const t = tokens[idx]
+  const lang = t.info.trim().split(/\s+/)[0].toLowerCase()
+  if (lang === 'mermaid' || (!lang && MERMAID_FIRST_LINE_RE.test(t.content.replace(/^\s*%%.*\n/gm, '')))) {
+    return `<pre class="mermaid">${md.utils.escapeHtml(t.content)}</pre>\n`
+  }
+  return defaultFence(tokens, idx, options, env, self)
+}
 
 // KaTeX 输出只会用到这些标签/属性；style 只放行它会写的几类
 const KATEX_STYLE_RE = /^(margin|padding)(-\w+)?$|^(top|bottom|left|right|height|width|min-width|vertical-align|border-\w+(-\w+)?|color|position|transform|display|font-size|line-height|white-space|text-align)$/
@@ -33,7 +57,8 @@ export function normalizeMath(src: string): string {
   const parts = src.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/)
   for (let i = 0; i < parts.length; i += 2) {
     parts[i] = parts[i]
-      .replace(/\\\[([\s\S]*?)\\\]/g, (_m, body: string) => `$$${body}$$`)
+      // 紧跟在行内公式的收尾 $ 后面（$n$\\[…\\]）要隔一个空格，否则拼出 $$$ 两种公式都认不出
+      .replace(/(\$?)\\\[([\s\S]*?)\\\]/g, (_m, pre: string, body: string) => `${pre ? '$ ' : ''}$$${body}$$`)
       .replace(/\\\(([\s\S]*?)\\\)/g, (_m, body: string) => `$${body.trim()}$`)
       .replace(/(?<![\w$\\])([A-Za-z])\$(?=[_^'\\])/g, '$$$1')
   }
@@ -48,12 +73,14 @@ export function renderMarkdown(src: string): string {
       img: ['src', 'alt'],
       input: ['type', 'checked', 'disabled'],
       code: ['class'],
+      pre: ['class'],
       a: ['href', 'name', 'target', 'rel'],
       span: ['class', 'style', 'aria-hidden'],
       svg: ['xmlns', 'width', 'height', 'viewBox', 'preserveAspectRatio', 'style', 'class'],
       path: ['d'],
       line: ['x1', 'y1', 'x2', 'y2', 'stroke-width'],
     },
+    allowedClasses: { pre: ['mermaid'] },
     allowedStyles: { '*': allowedStyles },
     allowedSchemes: ['http', 'https', 'mailto'],
     transformTags: { a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer' }) },

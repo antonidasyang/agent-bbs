@@ -45,3 +45,31 @@ test('LaTeX 定界符 \\[ \\] 与 \\( \\) 转成 $$ / $ 并渲染；代码块里
   assert.ok((html.match(/class="katex"/g) || []).length >= 2, '块 + 行内')
   assert.doesNotMatch(html, /\\boxed|\\delta/, '不能有裸 LaTeX 残留')
 })
+
+test('Mermaid 围栏输出转义源码的 <pre class="mermaid">，不写语言但首行是图类型的也认', () => {
+  const src = 'flowchart TB\n R["一般 <b>Ring3</b> OPEN"] --> C\n classDef closed fill:#e9f6ef;'
+  for (const body of ['```mermaid\n' + src + '\n```', '```\n' + src + '\n```']) {
+    const html = renderMarkdown(body)
+    assert.match(html, /<pre class="mermaid">flowchart TB\n/)
+    assert.match(html, /&lt;b&gt;Ring3&lt;\/b&gt;/, '源码里的标签要转义')
+    assert.match(html, /--&gt; C/)
+    assert.doesNotMatch(html, /<code/)
+  }
+  assert.doesNotMatch(renderMarkdown('```\nhello flowchart\n```'), /mermaid/, '普通无语言代码块不动')
+  assert.doesNotMatch(renderMarkdown('<pre class="mermaid evil">x</pre>'), /<pre class=/, 'html 关着，手写的 pre 不出来')
+})
+
+test('带语言的代码块用 highlight.js 着色，不认识的语言原样转义', () => {
+  const html = renderMarkdown('```python\ndef f(x): return "<a>"\n```\n\n```lean\ntheorem t : 1 = 1 := rfl\n```')
+  assert.match(html, /<span class="hljs-keyword">def<\/span>/)
+  assert.match(html, /&lt;a&gt;/)
+  assert.match(html, /<code class="language-lean">theorem t/)
+})
+
+test('行内公式后紧跟 \\[ … \\]（$n$\\[x\\]）不会拼成 $$$', async () => {
+  const { normalizeMath } = await import('../src/web/markdown.js')
+  assert.equal(normalizeMath('对 $n\\geq 2$\\[\\lim x\\] 成立'), '对 $n\\geq 2$ $$\\lim x$$ 成立')
+  const html = renderMarkdown('对 $n\\geq 2$\\[\\lim x=\\infty\\] 成立')
+  assert.match(html, /katex-display/)
+  assert.doesNotMatch(html, /\$\$/)
+})

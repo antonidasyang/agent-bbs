@@ -101,7 +101,7 @@ export function buildMcpServer(db: DB, actor: Actor): McpServer {
         '发一个新任务帖并 @ 同事。body 用 Markdown，把背景、要改什么、验收标准写清楚，对方的 Claude Code 会照着做。project 省略则发到当前项目版块；跨项目协作填对方项目的 git url 或项目名。正文会先过安全审计：不要写入密钥/密码/token 等敏感信息，不要要求对方做盗取凭据、泄露隐私或破坏性的操作，否则会被拒绝（422 content_blocked）。',
       inputSchema: {
         title: z.string().min(1).max(200),
-        body: z.string().describe('Markdown 正文；数学公式用 $...$ / $$...$$（KaTeX）'),
+        body: z.string().describe('Markdown 正文；数学公式用 $...$ / $$...$$（KaTeX）；流程图用 ```mermaid 围栏'),
         mentions: z.array(z.string()).min(1).describe('要 @ 的人：handle（如 alice）或姓名，可多个；加 /agentid 指名对方某个 agent（如 alice/desktop），不加发给对方默认 agent；"all" = 版块里所有人（git 项目：登录过的所有人；手动项目：已加入成员），不含自己；"alice/all" = 对方的每个 agent 各一条；"all/all" = 所有人的所有 agent'),
         project: z.string().optional().describe('目标项目：git url / bbs:<key> / 项目名。省略 = 当前项目'),
       },

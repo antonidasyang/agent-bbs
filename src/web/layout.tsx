@@ -27,6 +27,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 form.inline{display:inline}
 .md{line-height:1.65}.md pre{background:var(--bg);padding:10px;border-radius:6px;overflow:auto;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.md code{background:var(--bg);padding:1px 4px;border-radius:4px;font-size:13px}.md pre code{padding:0;background:none}
 .md .katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}.md .katex{font-size:1.05em}
+.md pre.mermaid{white-space:pre}.md .mermaid-box{overflow-x:auto;padding:8px 0;text-align:center}.md .mermaid-box svg{max-width:100%;height:auto}.md .mermaid-err{color:var(--bad);font-size:12px;margin:-4px 0 8px}
+.hljs-comment,.hljs-quote{color:#6a737d;font-style:italic}.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-built_in,.hljs-type,.hljs-meta .hljs-keyword{color:#cf222e}.hljs-string,.hljs-regexp,.hljs-addition,.hljs-attribute,.hljs-meta .hljs-string{color:#0a3069}.hljs-number,.hljs-symbol,.hljs-bullet,.hljs-variable,.hljs-template-variable,.hljs-attr{color:#0550ae}.hljs-title,.hljs-section,.hljs-name,.hljs-selector-id,.hljs-selector-class{color:#8250df}.hljs-meta{color:#953800}.hljs-deletion{color:#82071e}
+@media(prefers-color-scheme:dark){.hljs-comment,.hljs-quote{color:#8b949e}.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-built_in,.hljs-type,.hljs-meta .hljs-keyword{color:#ff7b72}.hljs-string,.hljs-regexp,.hljs-addition,.hljs-attribute,.hljs-meta .hljs-string{color:#a5d6ff}.hljs-number,.hljs-symbol,.hljs-bullet,.hljs-variable,.hljs-template-variable,.hljs-attr{color:#79c0ff}.hljs-title,.hljs-section,.hljs-name,.hljs-selector-id,.hljs-selector-class{color:#d2a8ff}.hljs-meta{color:#ffa657}.hljs-deletion{color:#ffdcd7}}
 .md img{max-width:100%}.md blockquote{border-left:3px solid var(--line);margin:0;padding-left:12px;color:var(--muted)}
 .reply{border-top:1px solid var(--line);padding:12px 0}.reply .who{font-size:13px;color:var(--muted);margin-bottom:4px}
 .tabs a{margin-right:12px}.tabs a.on{font-weight:600;color:var(--fg)}
@@ -37,6 +40,20 @@ pre.cmd{background:#111;color:#eee;padding:10px;border-radius:6px;overflow:auto;
 .mention-row{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .mention-row .actions{margin-left:auto;display:flex;gap:6px}
 `
+
+// 有 Mermaid 图才加载 5MB 的脚本；逐个 render，失败的保留源码并给一行错误
+const MERMAID_JS = `(function(){
+var els=document.querySelectorAll('pre.mermaid');if(!els.length)return;
+var s=document.createElement('script');s.src='/static/mermaid/mermaid.min.js';
+s.onload=async function(){
+  var dark=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:dark?'dark':'default',flowchart:{htmlLabels:false}});
+  for(var i=0;i<els.length;i++){var el=els[i];
+    try{var r=await mermaid.render('mmd'+i,el.textContent);var box=document.createElement('div');box.className='mermaid-box';box.innerHTML=r.svg;
+      box.title='双击查看源码';box.ondblclick=(function(b,p){return function(){b.replaceWith(p)}})(box,el);el.replaceWith(box)}
+    catch(e){var d=document.getElementById('dmmd'+i);if(d)d.remove();var m=document.createElement('div');m.className='mermaid-err';
+      m.textContent='Mermaid 图渲染失败：'+String((e&&e.message)||e).split('\\n')[0];el.after(m)}}
+};document.head.appendChild(s)})()`
 
 export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null; flash?: string | null }>> = ({ title, actor, flash, children }) => (
   <html lang="zh-CN">
@@ -75,6 +92,7 @@ export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null;
         {flash && <div class="flash">{flash}</div>}
         {children}
       </main>
+      <script dangerouslySetInnerHTML={{ __html: MERMAID_JS }} />
     </body>
   </html>
 )
