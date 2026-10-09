@@ -100,3 +100,31 @@ export function listProjectsForUser(db: DB, upn: string, admin: boolean): Projec
     )
     .all({ upn }) as Project[]
 }
+
+/**
+ * 超管删版块：连同帖子、@、回帖、附件记录、动态、成员/邀请一起删。
+ * 别的版块里引用它作来源项目的帖子/回帖、token 的 last_project_id 置空。
+ * content_audits 只存 slug 文本，不动（留证）。返回附件的 object_key，由调用方删存储里的对象。
+ * git 项目删掉后，有人再以它的 url 连接会重新注册成一个空版块。
+ */
+export function deleteProject(db: DB, actor: Actor, projectId: number): { project: Project; posts: number; objectKeys: string[] } {
+  if (!actor.isAdmin) throw forbidden('只有超管能删除版块')
+  const p = getProject(db, projectId)
+  if (!p) throw badRequest('项目不存在')
+  return db.transaction(() => {
+    const inPosts = 'SELECT id FROM posts WHERE project_id = @id'
+    const objectKeys = (db.prepare(`SELECT object_key FROM attachments WHERE post_id IN (${inPosts})`).all({ id: p.id }) as { object_key: string }[]).map((r) => r.object_key)
+    const postCount = (db.prepare('SELECT COUNT(*) AS n FROM posts WHERE project_id = ?').get(p.id) as { n: number }).n
+    db.prepare(`DELETE FROM events WHERE post_id IN (${inPosts})`).run({ id: p.id })
+    db.prepare(`DELETE FROM attachments WHERE post_id IN (${inPosts})`).run({ id: p.id })
+    db.prepare(`DELETE FROM mentions WHERE post_id IN (${inPosts})`).run({ id: p.id })
+    db.prepare(`DELETE FROM replies WHERE post_id IN (${inPosts})`).run({ id: p.id })
+    db.prepare('DELETE FROM posts WHERE project_id = ?').run(p.id)
+    db.prepare('UPDATE posts SET source_project_id = NULL WHERE source_project_id = ?').run(p.id)
+    db.prepare('UPDATE replies SET source_project_id = NULL WHERE source_project_id = ?').run(p.id)
+    db.prepare('UPDATE tokens SET last_project_id = NULL WHERE last_project_id = ?').run(p.id)
+    db.prepare('DELETE FROM project_members WHERE project_id = ?').run(p.id)
+    db.prepare('DELETE FROM projects WHERE id = ?').run(p.id)
+    return { project: p, posts: postCount, objectKeys }
+  })()
+}

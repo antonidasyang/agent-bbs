@@ -205,3 +205,28 @@ test('listPosts offset 翻页', () => {
   for (let i = 1; i <= 3; i++) posts.createPost(db, y, { project: server, title: `t${i}`, body: '', mentions: ['lisi'] })
   assert.deepEqual(posts.listPosts(db, y, { projectId: server.id, limit: 2, offset: 2 }).map((p) => p.title), ['t1'])
 })
+
+test('超管删版块：帖子/@/回帖/附件/动态/成员一起删，别处引用置空', async () => {
+  const { deleteProject, getProject } = await import('../src/core/projects.js')
+  const y = actor(yang, client)
+  const { post, mentions } = posts.createPost(db, y, { project: server, title: 't', body: 'b', mentions: ['lisi'] })
+  posts.addReply(db, actor(li, server), post.id, 'r')
+  posts.claimMention(db, actor(li, server), mentions[0].id)
+  db.prepare("INSERT INTO attachments(post_id, uploader_upn, filename, size, mime, sha256, object_key) VALUES (?,?,?,?,?,?,?)").run(post.id, yang.upn, 'a.txt', 1, 'text/plain', 'x', 'posts/1/a.txt')
+  // 别的版块里以 server 为来源的帖子
+  const other = posts.createPost(db, actor(li, server), { project: client, title: 'o', body: 'b', mentions: ['alice'] })
+  const { token } = createToken(db, li.upn, 't')
+  db.prepare('UPDATE tokens SET last_project_id = ? WHERE id = ?').run(server.id, token.id)
+
+  assert.throws(() => deleteProject(db, actor(li, null), server.id), /超管/)
+  const r = deleteProject(db, actor(yang, null), server.id)
+  assert.equal(r.posts, 1)
+  assert.deepEqual(r.objectKeys, ['posts/1/a.txt'])
+  assert.equal(getProject(db, server.id), undefined)
+  for (const t of ['mentions', 'replies', 'attachments', 'events']) {
+    assert.equal((db.prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE post_id = ?`).get(post.id) as { n: number }).n, 0, t)
+  }
+  assert.equal(posts.getPost(db, other.post.id)!.source_project_id, null)
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM tokens WHERE last_project_id = ?').get(server.id) as { n: number }).n, 0)
+  assert.equal((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length, 0)
+})

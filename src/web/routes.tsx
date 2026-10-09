@@ -14,7 +14,8 @@ import { Layout, StatusBadge, StatusIcon, postStatus } from './layout.js'
 import { renderMarkdown } from './markdown.js'
 import { config } from '../config.js'
 import { localPart, setNotifyEmail, mailAddressOf, getUser } from '../core/users.js'
-import { listProjectsForUser, getProject, createManualProject } from '../core/projects.js'
+import { listProjectsForUser, getProject, createManualProject, deleteProject } from '../core/projects.js'
+import { removeObject } from '../storage/index.js'
 import * as members from '../core/members.js'
 import { sendInviteMails } from '../mail/index.js'
 import { createToken, listTokens, revokeToken, tokenExpired } from '../core/tokens.js'
@@ -327,6 +328,20 @@ web.get('/p/:id', (c) => {
           </p>
         )}
       </div>
+      {actor.isAdmin && (
+        <div class="card">
+          <h2>删除版块（超管）</h2>
+          <p class="muted small">
+            连同本版块的全部帖子、@、回帖、附件、成员和邀请一起删除，<b>不可恢复</b>（每日备份里还有）。安全审计记录保留。
+            {project.kind === 'git' && ' git 项目删除后，有人再以这个仓库连接会重新注册成一个空版块。'}
+          </p>
+          <form method="post" action={`/p/${project.id}/delete`}>
+            <input type="text" name="confirm" required placeholder={`输入 ${project.slug} 确认`} style="width:420px;display:inline-block" autocomplete="off" /> <button class="danger" type="submit">
+              删除版块
+            </button>
+          </form>
+        </div>
+      )}
     </Layout>,
   )
 })
@@ -408,6 +423,20 @@ web.post('/p/:id/members/leave', (c) => {
     throw e
   }
   return redirectFlash(c, '/', '已退出项目')
+})
+web.post('/p/:id/delete', async (c) => {
+  const db = c.get('db')
+  const id = idParam(c.req.param('id'))
+  requireAdmin(c.get('actor'))
+  const project = getProject(db, id)
+  if (!project) throw new AppError(404, '项目不存在')
+  const f = await c.req.parseBody()
+  if (String(f['confirm'] ?? '').trim() !== project.slug) return redirectFlash(c, `/p/${id}`, `确认内容不对，要输入 ${project.slug}`)
+  const r = deleteProject(db, c.get('actor'), id)
+  // 库里已删干净；存储对象尽力删，失败只记日志（孤儿对象不影响功能）
+  for (const key of r.objectKeys) removeObject(key).catch((e) => console.error(`[delete-project] 删附件对象 ${key} 失败:`, (e as Error).message))
+  console.log(`[delete-project] ${c.get('actor').user.upn} 删除了版块 ${project.slug}（${r.posts} 帖，${r.objectKeys.length} 附件）`)
+  return redirectFlash(c, '/', `已删除版块 ${project.name}（${r.posts} 个帖子）`)
 })
 web.get('/invite/:token', (c) => {
   const actor = c.get('actor')
