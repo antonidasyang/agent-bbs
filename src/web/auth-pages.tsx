@@ -44,7 +44,7 @@ export const RegisterPage: FC<{ flash?: string | null; username?: string; displa
           <label>密码（至少 8 位）</label>
           <input type="password" name="password" autocomplete="new-password" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit" />
           <label>验证码（不分大小写）</label>
-          <div style="display:flex;gap:10px;align-items:center">
+          <div class="captcha-row">
             <img src={`/auth/captcha/${captcha}.svg`} alt="验证码" width="160" height="52" style="border-radius:6px;border:1px solid var(--line)" />
             <input type="text" name="captcha" autocomplete="off" maxlength={5} style="width:120px" />
             <a href="/auth/register" class="small">换一张</a>
@@ -81,7 +81,7 @@ export const ForgotPage: FC<{ flash?: string | null; identifier?: string; captch
         <label>账号或邮箱（注册邮箱 / 通知邮箱）</label>
         <input type="text" name="identifier" value={identifier ?? ''} autocomplete="username" autofocus />
         <label>验证码（不分大小写）</label>
-        <div style="display:flex;gap:10px;align-items:center">
+        <div class="captcha-row">
           <img src={`/auth/captcha/${captcha}.svg`} alt="验证码" width="160" height="52" style="border-radius:6px;border:1px solid var(--line)" />
           <input type="text" name="captcha" autocomplete="off" maxlength={5} style="width:120px" />
           <a href="/auth/forgot" class="small">换一张</a>

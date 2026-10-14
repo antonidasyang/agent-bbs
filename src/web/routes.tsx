@@ -75,7 +75,7 @@ web.get('/', (c) => {
             还没有你参与的项目。让你的 Claude Code 接入后（<a href="/tokens">创建 Token</a>），项目会自动出现在这里。
           </p>
         ) : (
-          <table>
+          <table class="mobile-list">
             <thead>
               <tr>
                 <th>项目</th>
@@ -88,13 +88,13 @@ web.get('/', (c) => {
             <tbody>
               {projects.map((p) => (
                 <tr>
-                  <td>
+                  <td data-label="项目">
                     <a href={`/p/${p.id}`}>{p.name}</a>
                   </td>
-                  <td class="muted">{p.slug}</td>
-                  <td class="muted small">{p.kind === 'manual' ? '手动 · 成员制' : 'git'}</td>
-                  <td>{counts.get(p.id) ? <span class="badge pending">{counts.get(p.id)}</span> : <span class="muted">0</span>}</td>
-                  <td>
+                  <td data-label="标识" class="muted">{p.slug}</td>
+                  <td data-label="类型" class="muted small">{p.kind === 'manual' ? '手动 · 成员制' : 'git'}</td>
+                  <td data-label="我的待办">{counts.get(p.id) ? <span class="badge pending">{counts.get(p.id)}</span> : <span class="muted">0</span>}</td>
+                  <td data-label="操作">
                     <a href={`/posts/new?project=${p.id}`}>发帖</a>
                   </td>
                 </tr>
@@ -118,7 +118,7 @@ const TaskList = ({ title, tasks }: { title: string; tasks: posts.InboxTask[] })
     {tasks.length === 0 ? (
       <p class="muted">没有待办。</p>
     ) : (
-      <table>
+      <table class="mobile-list">
         <thead>
           <tr>
             <th>状态</th>
@@ -131,16 +131,16 @@ const TaskList = ({ title, tasks }: { title: string; tasks: posts.InboxTask[] })
         <tbody>
           {tasks.map((t) => (
             <tr>
-              <td>
+              <td data-label="状态">
                 <StatusBadge status={t.status} />
               </td>
-              <td>
+              <td data-label="标题">
                 <a href={`/posts/${t.post.id}`}>{t.post.title}</a>
                 {t.post.reply_count > 0 && <span class="muted"> · {t.post.reply_count} 回复</span>}
               </td>
-              <td class="muted">{t.post.project_name}</td>
-              <td class="muted">{t.post.author_name}</td>
-              <td class="muted">{fmt(t.post.created_at)}</td>
+              <td data-label="项目" class="muted">{t.post.project_name}</td>
+              <td data-label="发起人" class="muted">{t.post.author_name}</td>
+              <td data-label="时间" class="muted">{fmt(t.post.created_at)}</td>
             </tr>
           ))}
         </tbody>
@@ -172,14 +172,14 @@ web.get('/inbox', (c) => {
         {box.updates.length === 0 ? (
           <p class="muted">暂无。</p>
         ) : (
-          <table>
+          <table class="mobile-list">
             <tbody>
               {box.updates.map((u) => (
                 <tr>
-                  <td class="muted" style="width:130px">
+                  <td data-label="时间" class="muted" style="width:130px">
                     {fmt(u.created_at)}
                   </td>
-                  <td>
+                  <td data-label="动态">
                     <b>{u.actor_name}</b> {EVENT_LABEL[u.type] ?? u.type} <a href={`/posts/${u.post_id}`}>{u.post_title}</a>
                     {u.reply_body && <div class="muted small">{u.reply_body.slice(0, 160)}</div>}
                   </td>
@@ -226,16 +226,16 @@ web.get('/p/:id', (c) => {
         <div class="card">
           {project.description && <p style="margin-top:0">{project.description}</p>}
           <h2>成员（{mems.filter((m) => m.status === 'joined').length}）</h2>
-          <table>
+          <table class="mobile-list">
             <tbody>
               {mems.map((m) => (
                 <tr>
-                  <td>
+                  <td data-label="成员">
                     <b>{m.display_name}</b> <span class="muted">@{localPart(m.user_upn)}</span>
                   </td>
-                  <td class="muted small">{m.role === 'owner' ? '创建者' : m.status === 'joined' ? '成员' : '已邀请，待接受'}</td>
-                  <td class="muted small">{m.status === 'joined' ? fmt(m.joined_at) : fmt(m.invited_at)}</td>
-                  <td style="text-align:right">
+                  <td data-label="角色" class="muted small">{m.role === 'owner' ? '创建者' : m.status === 'joined' ? '成员' : '已邀请，待接受'}</td>
+                  <td data-label="时间" class="muted small">{m.status === 'joined' ? fmt(m.joined_at) : fmt(m.invited_at)}</td>
+                  <td data-label="操作" style="text-align:right">
                     {isOwner && m.role !== 'owner' && (
                       <form class="inline" method="post" action={`/p/${project.id}/members/remove`}>
                         <input type="hidden" name="upn" value={m.user_upn} />
@@ -283,7 +283,7 @@ web.get('/p/:id', (c) => {
         {list.length === 0 ? (
           <p class="muted">没有帖子。</p>
         ) : (
-          <table>
+          <table class="mobile-list">
             <thead>
               <tr>
                 <th style="width:28px"></th>
@@ -297,14 +297,14 @@ web.get('/p/:id', (c) => {
             <tbody>
               {list.map((p) => (
                 <tr>
-                  <td>
+                  <td data-label="状态">
                     <StatusIcon {...postStatus(p.mentions.map((m) => m.status))} />
                   </td>
-                  <td>
+                  <td data-label="标题">
                     <a href={`/posts/${p.id}`}>{p.title}</a>
                     {p.reply_count > 0 && <span class="muted"> · {p.reply_count} 回复</span>}
                   </td>
-                  <td>
+                  <td data-label="@">
                     {p.mentions.map((m) => (
                       <span style="margin-right:6px">
                         {m.target_name}
@@ -312,9 +312,9 @@ web.get('/p/:id', (c) => {
                       </span>
                     ))}
                   </td>
-                  <td class="muted">{p.author_name}</td>
-                  <td class="muted">{p.source_project_slug ?? '-'}</td>
-                  <td class="muted">{fmt(p.updated_at)}</td>
+                  <td data-label="发起人" class="muted">{p.author_name}</td>
+                  <td data-label="来源项目" class="muted">{p.source_project_slug ?? '-'}</td>
+                  <td data-label="更新" class="muted">{fmt(p.updated_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -768,7 +768,7 @@ web.get('/tokens', (c) => {
           一个人可以有多个 agent（多台机器 / 多个实例）。别人 <code>@{localPart(actor.user.upn)}</code> 发给默认 agent；<code>@{localPart(actor.user.upn)}/&lt;id&gt;</code> 指名某个 agent。
           接入时加 <code>--header "X-Agent: &lt;id&gt;"</code> 表明身份，不加就是默认 agent。
         </p>
-        <table>
+        <table class="mobile-list">
           <thead>
             <tr>
               <th>id</th>
@@ -781,13 +781,13 @@ web.get('/tokens', (c) => {
           <tbody>
             {listAgents(db, actor.user.upn).map((a) => (
               <tr>
-                <td>
+                <td data-label="id">
                   <code>{a.agent_id}</code> {a.is_default ? <span class="badge done">默认</span> : null}
                 </td>
-                <td>{a.name}</td>
-                <td class="muted">@{mentionHandle(actor.user.upn, a.is_default ? null : a.agent_id)}</td>
-                <td class="muted">{fmt(a.last_seen_at) || '-'}</td>
-                <td>
+                <td data-label="备注">{a.name}</td>
+                <td data-label="@ 写法" class="muted">@{mentionHandle(actor.user.upn, a.is_default ? null : a.agent_id)}</td>
+                <td data-label="最近连接" class="muted">{fmt(a.last_seen_at) || '-'}</td>
+                <td data-label="操作">
                   {!a.is_default && (
                     <>
                       <form class="inline" method="post" action={`/agents/${a.id}/default`}>
@@ -829,7 +829,7 @@ web.get('/tokens', (c) => {
       </div>
       <div class="card">
         <h2>我的 Token</h2>
-        <table>
+        <table class="mobile-list">
           <thead>
             <tr>
               <th>备注</th>
@@ -844,13 +844,13 @@ web.get('/tokens', (c) => {
           <tbody>
             {tokens.map((t) => (
               <tr>
-                <td>{t.name}</td>
-                <td class="muted">{t.prefix}…</td>
-                <td class="muted">{fmt(t.created_at)}</td>
-                <td class="muted">{t.expires_at ? fmt(t.expires_at) : '永久'}</td>
-                <td class="muted">{fmt(t.last_used_at) || '-'}</td>
-                <td class="muted">{t.last_project_id ? getProject(db, t.last_project_id)?.slug : '-'}</td>
-                <td>
+                <td data-label="备注">{t.name}</td>
+                <td data-label="前缀" class="muted">{t.prefix}…</td>
+                <td data-label="创建" class="muted">{fmt(t.created_at)}</td>
+                <td data-label="到期" class="muted">{t.expires_at ? fmt(t.expires_at) : '永久'}</td>
+                <td data-label="最近使用" class="muted">{fmt(t.last_used_at) || '-'}</td>
+                <td data-label="最近项目" class="muted">{t.last_project_id ? getProject(db, t.last_project_id)?.slug : '-'}</td>
+                <td data-label="操作">
                   {t.revoked_at ? (
                     <span class="muted">已吊销</span>
                   ) : tokenExpired(t) ? (
@@ -1073,7 +1073,7 @@ web.get('/admin/audit', (c) => {
             共 {total} 条{total > 100 ? '，只显示最近 100 条' : ''}，导出全量（含完整正文）：<a href={`/admin/audit/export?${qs(f)}&format=jsonl`}>JSONL</a> · <a href={`/admin/audit/export?${qs(f)}&format=csv`}>CSV</a>
           </span>
         </form>
-        <table>
+        <table class="mobile-list">
           <thead>
             <tr>
               <th>时间</th>
@@ -1088,15 +1088,15 @@ web.get('/admin/audit', (c) => {
           <tbody>
             {rows.map((r) => (
               <tr>
-                <td class="muted">{fmt(r.created_at)}</td>
-                <td>{localPart(r.actor_upn)}<div class="muted small">{r.project_slug ?? ''}</div></td>
-                <td>{r.kind === 'post' ? '发帖' : '回帖'}</td>
-                <td>
+                <td data-label="时间" class="muted">{fmt(r.created_at)}</td>
+                <td data-label="谁">{localPart(r.actor_upn)}<div class="muted small">{r.project_slug ?? ''}</div></td>
+                <td data-label="类型">{r.kind === 'post' ? '发帖' : '回帖'}</td>
+                <td data-label="判定">
                   <span class={`badge ${r.verdict === 'block' ? 'disabled' : r.verdict === 'allow' ? 'done' : 'pending'}`}>{r.verdict}</span>
                   <div class="muted small">{JSON.parse(r.categories || '[]').join(', ')}</div>
                 </td>
-                <td class="small">{r.reason ?? r.error ?? ''}</td>
-                <td class="small" style="max-width:360px">
+                <td data-label="原因" class="small">{r.reason ?? r.error ?? ''}</td>
+                <td data-label="内容摘录" class="small" style="max-width:360px">
                   {r.title && <b>{r.title}</b>}
                   <div style="white-space:pre-wrap;word-break:break-all">{r.excerpt}</div>
                   {r.body && r.body.length > r.excerpt.length && (
@@ -1107,7 +1107,7 @@ web.get('/admin/audit', (c) => {
                   )}
                   {!r.body && <div class="muted">（2026-09-30 之前的记录只有前 500 字）</div>}
                 </td>
-                <td class="muted small">{r.latency_ms != null ? `${r.latency_ms}ms` : ''}</td>
+                <td data-label="耗时" class="muted small">{r.latency_ms != null ? `${r.latency_ms}ms` : ''}</td>
               </tr>
             ))}
             {rows.length === 0 && (

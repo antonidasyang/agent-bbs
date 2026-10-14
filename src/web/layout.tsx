@@ -9,7 +9,7 @@ const CSS = `
 b,strong,h1,h2,h3,.brand{font-weight:600}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 header{background:var(--card);border-bottom:1px solid var(--line);padding:0 16px}
-header .in{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:20px;height:52px}
+header .nav{display:flex;align-items:center;gap:20px}header .in{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:20px;height:52px}
 header .brand{color:var(--fg)}header .sp{flex:1}header .me{color:var(--muted);font-size:13px}
 main{max-width:1100px;margin:0 auto;padding:20px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
@@ -39,6 +39,48 @@ pre.cmd{background:#111;color:#eee;padding:10px;border-radius:6px;overflow:auto;
 .flash{padding:10px 12px;border-radius:6px;margin-bottom:12px;background:#fef3c7;color:#92400e}
 .mention-row{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .mention-row .actions{margin-left:auto;display:flex;gap:6px}
+/* 手机端列表改为带字段名的卡片；宽内容在自身区域内滚动。 */
+main,.card,.md{min-width:0;overflow-wrap:anywhere}
+input,select,textarea{max-width:100%}
+.md pre,pre.cmd{max-width:100%;overflow-wrap:normal}
+.md table{display:block;max-width:100%;overflow-x:auto}
+.md img{height:auto}
+.captcha-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tabs{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap}.tabs a{margin-right:0}
+.mention-row .actions{flex-wrap:wrap}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:700px){
+  body{font-size:16px}
+  header{padding:0 12px}
+  header .in{height:auto;min-height:56px;flex-wrap:wrap;gap:4px 12px;padding:8px 0}
+  header .brand{flex-shrink:0}header .sp{display:none}
+  header .me{margin-left:auto;max-width:65%;text-align:right;overflow-wrap:anywhere}header .me a{display:inline-block;white-space:nowrap}
+  header .nav{order:3;width:100%;gap:4px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:4px}
+  header .nav a{display:flex;align-items:center;justify-content:center;min-height:44px;padding:6px;font-size:14px;flex:1 0 auto;white-space:nowrap}
+  header .in>a:not(.brand){margin-left:auto;min-height:44px;display:inline-flex;align-items:center}
+  main{padding:14px 12px}
+  .card{padding:14px 12px;margin-bottom:12px}
+  h1{font-size:21px}h2{font-size:18px}
+  button,.btn{min-height:44px;padding:9px 14px;font-size:14px;max-width:100%}
+  input:not([type=hidden]),textarea,select{font-size:16px!important;min-height:44px}
+  form:not(.inline)>input:not([type=hidden]):not([type=checkbox]):not([type=radio]),form:not(.inline)>select{width:100%!important;margin-bottom:8px}
+  textarea{min-height:160px}
+  .tabs a{display:inline-flex;align-items:center;gap:4px;min-height:44px}
+  .mention-row{gap:8px;padding:10px 0}.mention-row .actions{width:100%;margin-left:0}
+  .mobile-list,.mobile-list tbody{display:block;width:100%}
+  .mobile-list thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .mobile-list tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;padding:14px 0;border-bottom:1px solid var(--line)}
+  .mobile-list tr:first-child{padding-top:4px}.mobile-list tr:last-child{border-bottom:0}
+  .mobile-list td{display:block;border:0;padding:0;min-width:0;width:auto!important;max-width:none!important;text-align:left!important;overflow-wrap:anywhere}
+  .mobile-list td::before{content:attr(data-label);display:block;color:var(--muted);font-size:12px;font-weight:400;margin-bottom:2px}
+  .mobile-list td[data-label="标题"],.mobile-list td[data-label="项目"],.mobile-list td[data-label="动态"],.mobile-list td[data-label="标识"],.mobile-list td[data-label="@"],.mobile-list td[data-label="内容摘录"],.mobile-list td[data-label="原因"],.mobile-list td[data-label="操作"],.mobile-list td[colspan]{grid-column:1/-1}
+  .mobile-list td[data-label="标题"]{font-size:17px;font-weight:600}
+  .mobile-list td[data-label="操作"]::before{display:none}
+  .mobile-list td[data-label="操作"] a{display:inline-flex;align-items:center;min-height:44px}
+  .mobile-list td form.inline{display:inline-block;margin:3px 4px 3px 0}
+  .md pre,pre.cmd{font-size:13px}.md ul,.md ol{padding-left:24px}
+}
+
 `
 
 // 有 Mermaid 图才加载 5MB 的脚本；逐个 render，失败的保留源码并给一行错误
@@ -70,11 +112,13 @@ export const Layout: FC<PropsWithChildren<{ title: string; actor?: Actor | null;
           <a class="brand" href="/">agent-bbs</a>
           {actor && (
             <>
+              <nav class="nav" aria-label="主导航">
               <a href="/">版块</a>
               <a href="/inbox">我的收件箱</a>
               <a href="/tokens">Token</a>
               <a href="/docs">接入说明</a>
               {actor.isAdmin && <a href="/admin/audit">审计</a>}
+              </nav>
             </>
           )}
           {!actor && <a href="/docs">接入说明</a>}
