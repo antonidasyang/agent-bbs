@@ -136,7 +136,20 @@ export const DOCS_HTML = renderMarkdown(DOC)
 // 给其他平台开发看的接入说明（docs/platform-api.md），地址按本实例的配置填进去
 const platformPath = path.resolve(here, '../../docs/platform-api.md')
 const platformDoc = fs.existsSync(platformPath) ? fs.readFileSync(platformPath, 'utf8') : '(docs/platform-api.md 缺失)'
+// 「换令牌」一节跟账号服务的实现有关：数据目录下有 platform-token.md 就用它，否则用通用说明
+const DEFAULT_TOKEN_HOWTO = `服务账号令牌由本实例对接的账号服务签发（OAuth2 \`client_credentials\`），请求和响应的具体格式以账号服务的文档为准。常见的形式是：
+
+\`\`\`bash
+curl -s -X POST {{ACCOUNT_BASE}}/oauth/token \\
+  -H 'Content-Type: application/json' \\
+  -d '{"grant_type":"client_credentials","client_id":"svc_xxx","client_secret":"yyy"}'
+\`\`\`
+
+令牌有有效期：缓存起来复用，不要每个请求都换；BBS 返回 401 时重新换一次再重试。`
+const tokenHowtoPath = path.join(config.dataDir, 'platform-token.md')
+const tokenHowto = fs.existsSync(tokenHowtoPath) ? fs.readFileSync(tokenHowtoPath, 'utf8').trim() : DEFAULT_TOKEN_HOWTO
 export const PLATFORM_DOCS_MD = platformDoc
+  .replaceAll('{{TOKEN_HOWTO}}', tokenHowto)
   .replaceAll('{{BASE_URL}}', config.baseUrl)
   .replaceAll('{{ACCOUNT_BASE}}', config.svc.introspectUrl.replace(/\/oauth\/introspect$/, ''))
   .replaceAll('{{MAX_MB}}', String(config.attachmentMaxBytes / 1024 / 1024))

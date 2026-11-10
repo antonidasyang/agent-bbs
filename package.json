@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "audit:dryrun": "node dist/audit/dryrun.js",
     "backup": "node dist/backup/run.js",
+    "user:create": "node dist/auth/create-user.js",
     "audit:regress": "node dist/audit/dryrun.js < test/fixtures/audit-samples.jsonl",
     "test": "node --import tsx --test test/*.test.ts"
   },

@@ -18,17 +18,7 @@
 
 ## 2. 换令牌
 
-```bash
-curl -s -X POST {{ACCOUNT_BASE}}/oauth/token \
-  -H 'Content-Type: application/json' \
-  -d '{"grant_type":"client_credentials","client_id":"svc_xxx","client_secret":"yyy"}'
-```
-
-令牌在响应体的 `data.token`。注意三点：
-
-- 这个接口 **HTTP 恒为 200**，成功与否看响应体里的 `code`。
-- **一个 `clientId` 同时只有一个有效令牌**：再换一次，上一个立刻作废。多实例部署不要各换各的，要集中换、共用一份，否则会互相踢下线。
-- 令牌有有效期。缓存起来复用；BBS 返回 401 时重新换一次再重试。
+{{TOKEN_HOWTO}}
 
 ## 3. 请求约定
 
@@ -320,12 +310,12 @@ def _http(method, url, headers, body=None):
         return json.loads(r.read().decode("utf-8"))
 
 def get_token(force=False):
-    """一个 clientId 同时只有一个有效令牌：整个服务共用这一份，别每个请求都换。"""
+    """换令牌的请求和响应格式以账号服务为准，按实际情况改这里。整个服务共用一份令牌，别每个请求都换。"""
     global _token
     if _token is None or force:
         r = _http("POST", ACCOUNT + "/oauth/token", {"Content-Type": "application/json"},
                   {"grant_type": "client_credentials", "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET})
-        _token = r["data"]["token"]
+        _token = r["access_token"]
     return _token
 
 def bbs(method, path, body=None):
@@ -337,7 +327,7 @@ def bbs(method, path, body=None):
         except urllib.error.HTTPError as e:
             err = json.loads(e.read().decode("utf-8"))
             if e.code == 401 and attempt == 1:
-                continue            # 令牌过期或被顶掉：重新换一次再试
+                continue            # 令牌过期或被撤销：重新换一次再试
             raise RuntimeError("BBS %s %s: %s" % (e.code, err.get("error"), err.get("message")))
 
 post = bbs("POST", "/posts", {"title": "订单导出接口超时，请排查", "body": "详情……", "mentions": ["zhangsan"]})
@@ -345,3 +335,32 @@ print(post["url"])
 for p in bbs("GET", "/posts?status=open&limit=20")["posts"]:
     print(p["id"], p["title"], [(m["target"], m["status"]) for m in p["mentions"]])
 ```
+
+## 11. 附：账号服务要提供什么（给部署 BBS 的人看）
+
+BBS 不自己签发、也不本地验签服务账号令牌，而是把令牌交给一个外部账号服务校验。任何实现了下面这个接口的服务都可以对接：
+
+```
+POST <SVC_INTROSPECT_URL>
+X-Introspect-Key: <SVC_INTROSPECT_KEY>
+Content-Type: application/json
+
+{"token": "<平台带来的 Bearer 令牌>"}
+```
+
+响应（HTTP 200，JSON）：
+
+| 字段 | 说明 |
+|---|---|
+| `active` | `true` = 令牌有效；其他值一律按无效处理 |
+| `sub` | 服务账号的 `clientId`，`active` 为 `true` 时必填。BBS 里的账号就是它 |
+| `type` | 必须是 `client_credentials`，其他类型（如个人登录令牌）BBS 回 403 |
+| `name` | 可选，服务账号的显示名 |
+| `exp` | 可选，过期时间（epoch 秒），BBS 的缓存不会超过它 |
+| `error` | 校验密钥不对时回 `"unauthorized"`（配合 `active` 不为 `true`），BBS 按「账号服务不可用」处理，不会当成令牌无效缓存下来 |
+
+BBS 侧的行为：有效结果最多缓存 5 分钟，无效结果缓存 1 分钟；账号服务超时（3 秒）或报错时，10 分钟内校验通过过的令牌继续放行，其余返回 503 `auth_unavailable`。
+
+配置：`.env` 里填 `SVC_INTROSPECT_URL`（默认 `${CAS_BASE_URL}/oauth/introspect`）、`SVC_INTROSPECT_KEY`，并把允许调用的 `clientId` 写进 `SVC_ALLOWED_CLIENTS`。后两项任何一项为空，整个功能关闭。
+
+第 2 节「换令牌」的内容可以按实例定制：在数据目录下放一个 `platform-token.md`，就会替换掉默认说明（支持 `{{BASE_URL}}`、`{{ACCOUNT_BASE}}` 占位符）。
