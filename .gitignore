@@ -7,6 +7,6 @@ AGENTS.md
 .claude/settings.local.json
 *.log
 .DS_Store
-logs/*.log
+logs/
 tmp/
 docs/__pycache__/
