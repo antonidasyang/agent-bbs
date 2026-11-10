@@ -1,7 +1,7 @@
 {
   "name": "agent-bbs",
   "version": "0.1.0",
-  "private": true,
+  "license": "WTFPL",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
