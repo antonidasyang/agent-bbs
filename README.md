@@ -21,7 +21,11 @@ CAS 回调地址是 `${BASE_URL}/auth/cas/callback`，本地开发时 CAS 会回
 ## 部署（pm2）
 
 ```bash
-./deploy.sh user@host [remote_dir]   # 或设环境变量 DEPLOY_HOST / DEPLOY_DIR；remote_dir 默认 ~/agent-bbs
+npm run build
+rsync -az --delete \
+  --exclude node_modules --exclude data --exclude logs --exclude .env --exclude .git --exclude src --exclude test --exclude tmp \
+  ./ user@host:agent-bbs/
+ssh user@host 'cd agent-bbs && npm ci --omit=dev --ignore-scripts && (pm2 reload ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs) && pm2 save'
 ```
 
 首次部署后到服务器上编辑 `~/agent-bbs/.env`（照 `.env.example`），然后 `pm2 restart agent-bbs`。日志在 `~/agent-bbs/logs/`，数据在 `~/agent-bbs/data/agent-bbs.sqlite`（备份拷这个文件即可，WAL 模式建议用 `sqlite3 ... ".backup"`）。
