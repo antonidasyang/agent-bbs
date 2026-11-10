@@ -4,6 +4,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 process.env.SESSION_SECRET = 'test'
+// 不依赖本机 .env 里的域和超管
+process.env.ACCOUNT_DOMAIN = 'example.com'
+process.env.ADMIN_USERS = 'alice@example.com'
 const { openDb } = await import('../src/db/index.js')
 
 test('全新库跑完所有迁移后重开不报错，schema_version 只有一行', () => {

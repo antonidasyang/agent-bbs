@@ -25,6 +25,9 @@ await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
 const port = (server.address() as AddressInfo).port
 
 process.env.SESSION_SECRET = 'test'
+// 不依赖本机 .env 里的域和超管
+process.env.ACCOUNT_DOMAIN = 'example.com'
+process.env.ADMIN_USERS = 'alice@example.com'
 process.env.AUDIT_LLM_BASE_URL = `http://127.0.0.1:${port}/v1/`
 process.env.AUDIT_LLM_API_KEY = 'sk-test'
 process.env.AUDIT_LLM_MODEL = 'fake-model'

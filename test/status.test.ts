@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 process.env.SESSION_SECRET = 'test'
+// 不依赖本机 .env 里的域和超管
+process.env.ACCOUNT_DOMAIN = 'example.com'
+process.env.ADMIN_USERS = 'alice@example.com'
 const { postStatus } = await import('../src/web/layout.js')
 
 test('整帖状态图标：按各 @ 的状态汇总，禁用的不计', () => {

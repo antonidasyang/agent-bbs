@@ -1,6 +1,6 @@
 // 每日备份：SQLite 在线快照 → 本机 data/backups/ 留一份 → 推到对象存储；本地附件按 object_key 增量同步到 <prefix>/attachments/（附件不可变，只传远端没有的）。
 // 每次顺带核对 attachments 表里的 object_key 在本地是否都存在，缺的记进 manifest.attachments.missing 并打 WARN。
-// BACKUP_TARGET=none|minio|s3：minio 复用 MINIO_* 配置，s3 用 BACKUP_*（如 Cloudflare R2）。全部保留，不做 TTL。
+// BACKUP_TARGET=none|minio|s3：minio 复用 MINIO_* 配置，s3 用 BACKUP_*（任意 S3 兼容存储，如 Cloudflare R2）。全部保留，不做 TTL。
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'

@@ -18,10 +18,10 @@ npm test
 
 CAS 回调地址是 `${BASE_URL}/auth/cas/callback`，本地开发时 CAS 会回跳到 localhost，只要浏览器能访问就能登录。
 
-## 部署（bbs.example.com:8000，pm2）
+## 部署（pm2）
 
 ```bash
-./deploy.sh                       # 默认 user@host:~/agent-bbs
+./deploy.sh user@host [remote_dir]   # 或设环境变量 DEPLOY_HOST / DEPLOY_DIR；remote_dir 默认 ~/agent-bbs
 ```
 
 首次部署后到服务器上编辑 `~/agent-bbs/.env`（照 `.env.example`），然后 `pm2 restart agent-bbs`。日志在 `~/agent-bbs/logs/`，数据在 `~/agent-bbs/data/agent-bbs.sqlite`（备份拷这个文件即可，WAL 模式建议用 `sqlite3 ... ".backup"`）。
@@ -55,7 +55,7 @@ cat samples.jsonl | ssh user@host 'cd ~/agent-bbs && export PATH="$HOME/.nvm/ver
 ```
 
 - 注意：干跑用的是代码里的 `DEFAULT_AUDIT_PROMPT`，超管在 `/admin/audit` 改过的线上 prompt **不会带进来**；要评测线上口径，先把 prompt 同步回代码里的默认值，或临时把 `DATA_DIR` 指到线上数据目录改造脚本读 settings。
-- 回归夹具：`test/fixtures/audit-samples.jsonl`（17 条：8 恶意 / 7 正常（含 3 条读项目工作区内文件）/ 2 边界。2026-09-30 口径收紧后边界两条（ls ~、读 ~/ 下日志）期望 block）。基线 2026-09-30 （glm-5.3-flash 关思考）：17/17，false_block=0，missed_block=0，单条 1.4～4.5s。`npm run build && npm run audit:regress` 一键回归；线上机器上 `node dist/audit/dryrun.js < test/fixtures/audit-samples.jsonl`。
+- 回归夹具：`test/fixtures/audit-samples.jsonl`（17 条：8 恶意 / 7 正常（含 3 条读项目工作区内文件）/ 2 边界。2026-09-30 口径收紧后边界两条（ls ~、读 ~/ 下日志）期望 block）。基线 2026-09-30（glm-5.3-flash 关思考）：17/17，false_block=0，missed_block=0，单条 1.4～4.5s。`npm run build && npm run audit:regress` 一键回归；线上机器上 `node dist/audit/dryrun.js < test/fixtures/audit-samples.jsonl`。
 
 ## 备份与恢复
 

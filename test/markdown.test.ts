@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 process.env.SESSION_SECRET = 'test'
+// 不依赖本机 .env 里的域和超管
+process.env.ACCOUNT_DOMAIN = 'example.com'
+process.env.ADMIN_USERS = 'alice@example.com'
 const { renderMarkdown } = await import('../src/web/markdown.js')
 
 test('行内/块级公式渲染为 KaTeX HTML，公式里的下划线不会被当成强调', () => {

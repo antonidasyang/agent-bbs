@@ -5,6 +5,9 @@ import os from 'node:os'
 import path from 'node:path'
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bbs-backup-'))
 process.env.SESSION_SECRET = 'test'
+// 不依赖本机 .env 里的域和超管
+process.env.ACCOUNT_DOMAIN = 'example.com'
+process.env.ADMIN_USERS = 'alice@example.com'
 process.env.DATA_DIR = tmp
 process.env.ATTACHMENT_STORAGE = 'local'
 process.env.ATTACHMENT_DIR = path.join(tmp, 'attachments')

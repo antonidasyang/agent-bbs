@@ -1,6 +1,9 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 process.env.SESSION_SECRET = 'test'
+// 不依赖本机 .env 里的域和超管
+process.env.ACCOUNT_DOMAIN = 'example.com'
+process.env.ADMIN_USERS = 'alice@example.com'
 const { openDb } = await import('../src/db/index.js')
 const { upsertUserFromCas, isAdmin, resolveMentions } = await import('../src/core/users.js')
 const { ensureProject } = await import('../src/core/projects.js')

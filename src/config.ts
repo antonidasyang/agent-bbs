@@ -18,7 +18,7 @@ export const config = {
   host: env('HOST', '0.0.0.0'),
   dataDir: path.resolve(env('DATA_DIR', './data')),
   sessionSecret: env('SESSION_SECRET'),
-  adminUsers: env('ADMIN_USERS', 'alice@example.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  adminUsers: env('ADMIN_USERS', '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   accountDomain: env('ACCOUNT_DOMAIN', 'example.com').toLowerCase(),
   // 登录方式：cas（公司 CAS 单点登录）或 local（自建账号密码）
   authMode: (() => {
@@ -44,7 +44,7 @@ export const config = {
     allowedClients: (process.env.SVC_ALLOWED_CLIENTS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   },
   minio: {
-    endPoint: env('MINIO_ENDPOINT', 'minio.example.com'),
+    endPoint: env('MINIO_ENDPOINT', 'localhost'),
     port: Number(env('MINIO_PORT', '9000')),
     useSSL: env('MINIO_USE_SSL', 'false') === 'true',
     region: env('MINIO_REGION', 'us-east-1'),
